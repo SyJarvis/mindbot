@@ -33,7 +33,7 @@
 ## 安装
 
 ```bash
-git clone https://github.com/your-org/mindbot.git
+git clone https://github.com/SyJarvis/mindbot.git
 cd mindbot
 pip install -e .
 ```
@@ -45,7 +45,7 @@ pip install -e .
 **本地 Ollama（推荐）**
 
 ```bash
-ollama pull qwen3
+ollama pull qwen3-vl:8b
 ```
 
 **云服务**
@@ -62,7 +62,7 @@ export DEEPSEEK_API_KEY=your-api-key
 
 ```yaml
 agent:
-  model: "ollama/0/qwen3"  # 格式：provider/endpoint_index/model
+  model: "ollama/0/qwen3-vl:8b"  # 格式：provider/endpoint_index/model
   temperature: 0.7
   max_tokens: 8192
   max_tool_iterations: 20
@@ -77,7 +77,7 @@ providers:
         api_key: ""
         weight: 1
         models:
-          - id: "qwen3"
+          - id: "qwen3-vl:8b"
             role: "chat"
             level: "medium"
             vision: false
@@ -338,7 +338,7 @@ agent:
 
 ### 模型格式
 
-`provider/model`（如 `ollama/qwen3`、`openai/gpt-4`）
+`provider/model`（如 `ollama/qwen3-vl:8b`、`openai/gpt-4`）
 
 ### Ollama（本地）
 
@@ -346,7 +346,7 @@ agent:
 providers:
   ollama:
     base_url: http://localhost:11434/v1
-    models: [qwen3, qwen3-vl]
+    models: [qwen3-vl:8b, qwen3]
 ```
 
 ### OpenAI / 兼容服务
