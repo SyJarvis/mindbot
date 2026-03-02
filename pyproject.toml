@@ -1,0 +1,47 @@
+[project]
+name = "mindbot"
+version = "0.2.0"
+description = "基于 **Python + asyncio** 的模块化 AI Agent 框架，支持多 Provider、动态路由、流式响应和工具确认机制。"
+authors = [
+    {name = "MindBot Team"}
+]
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+]
+dependencies = [
+    "pydantic>=2.0",
+    "pydantic-settings>=2.0",
+    "pyyaml>=6.0",
+    "loguru>=0.7",
+    "typer>=0.12",
+    "prompt-toolkit>=3.0",
+    "rich>=13.0",
+    "croniter>=1.4",
+    "aiohttp>=3.9",
+]
+
+[project.scripts]
+mindbot = "mindbot.cli:app"
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+mindbot = ["templates/*"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+pythonpath = ["src"]
