@@ -14,7 +14,6 @@
 |------|------|
 | 统一入口 | `AgentOrchestrator` 自主决策，无需预选模式 |
 | 流式响应 | 实时事件流，用户可看到 Agent 思考过程 |
-| 工具确认 | 基于 OpenClaw 的多级安全确认机制 |
 | 智能路由 | 根据内容类型/复杂度/关键词自动选择模型 |
 | 多 Provider | OpenAI / Ollama / Transformers / llama.cpp |
 | 可中断执行 | 用户可随时中止 Agent 运行 |
