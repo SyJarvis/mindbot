@@ -7,9 +7,9 @@ import time
 import uuid
 from typing import Any
 
-from mindbot.memory.storage import SQLiteStorage
-from mindbot.memory.types import MemoryChunk, MemorySource, MemoryType
-from mindbot.utils import get_logger
+from src.mindbot.memory.storage import SQLiteStorage
+from src.mindbot.memory.types import MemoryChunk, MemorySource, MemoryType
+from src.mindbot.utils import get_logger
 
 logger = get_logger("memory.indexer")
 

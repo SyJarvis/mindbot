@@ -35,22 +35,22 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from mindbot.capability.backends.base import ExtensionBackend
-from mindbot.capability.backends.tooling.executor import ToolExecutor
-from mindbot.capability.backends.tooling.models import Tool
-from mindbot.capability.backends.tooling.registry import ToolRegistry
-from mindbot.capability.models import (
+from src.mindbot.capability.backends.base import ExtensionBackend
+from src.mindbot.capability.backends.tooling.executor import ToolExecutor
+from src.mindbot.capability.backends.tooling.models import Tool
+from src.mindbot.capability.backends.tooling.registry import ToolRegistry
+from src.mindbot.capability.models import (
     Capability,
     CapabilityConflictError,
     CapabilityExecutionError,
     CapabilityNotFoundError,
     CapabilityType,
 )
-from mindbot.context.models import ToolCall
-from mindbot.generation.executor import DynamicToolExecutor
-from mindbot.generation.models import ToolDefinition
-from mindbot.generation.registry import ToolDefinitionRegistry
-from mindbot.utils import get_logger
+from src.mindbot.context.models import ToolCall
+from src.mindbot.generation.executor import DynamicToolExecutor
+from src.mindbot.generation.models import ToolDefinition
+from src.mindbot.generation.registry import ToolDefinitionRegistry
+from src.mindbot.utils import get_logger
 
 logger = get_logger("capability.backends.tool_backend")
 
@@ -83,6 +83,8 @@ class ToolBackend:
 
         # capability_id -> "static" | "dynamic"
         self._routing: dict[str, str] = {}
+        # exposed tool name -> capability_id
+        self._name_index: dict[str, str] = {}
 
         # Transient (non-persisted) dynamic tools, keyed by definition id
         self._transient: dict[str, ToolDefinition] = {}
@@ -181,6 +183,7 @@ class ToolBackend:
         existing = self._routing.get(cap_id)
         if existing is not None and raise_on_conflict:
             raise CapabilityConflictError(cap_id)
+        self._index_name(tool.name, cap_id, raise_on_conflict=raise_on_conflict)
         self._routing[cap_id] = "static"
 
     async def _execute_static(self, capability_id: str, arguments: dict[str, Any]) -> str:
@@ -248,6 +251,7 @@ class ToolBackend:
         existing = self._routing.get(cap_id)
         if existing is not None and raise_on_conflict:
             raise CapabilityConflictError(cap_id)
+        self._index_name(defn.name, cap_id, raise_on_conflict=raise_on_conflict)
         self._routing[cap_id] = "dynamic"
 
     async def _execute_dynamic(
@@ -260,6 +264,42 @@ class ToolBackend:
         if defn is None:
             raise CapabilityNotFoundError(capability_id)
         return await self._dynamic_executor.execute(defn, arguments, context)
+
+    def list_dynamic_definitions(self) -> list[ToolDefinition]:
+        """Return all persisted and transient dynamic definitions."""
+        return [*self._def_registry.list_all(), *self._transient.values()]
+
+    def remove_dynamic(self, key: str) -> bool:
+        """Remove a dynamic definition by ID or name."""
+        defn = (
+            self._def_registry.get_by_id(key)
+            or self._def_registry.get_by_name(key)
+            or self._transient.get(key)
+            or next((item for item in self._transient.values() if item.name == key), None)
+        )
+        if defn is None:
+            return False
+
+        if self._def_registry.get_by_id(defn.id) is not None:
+            self._def_registry.delete(defn.id)
+        else:
+            self._transient.pop(defn.id, None)
+
+        self._routing.pop(defn.id, None)
+        self._name_index.pop(defn.name, None)
+        return True
+
+    def _index_name(
+        self,
+        name: str,
+        capability_id: str,
+        *,
+        raise_on_conflict: bool,
+    ) -> None:
+        existing = self._name_index.get(name)
+        if existing is not None and existing != capability_id and raise_on_conflict:
+            raise CapabilityConflictError(name)
+        self._name_index[name] = capability_id
 
 
 # ------------------------------------------------------------------

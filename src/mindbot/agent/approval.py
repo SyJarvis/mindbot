@@ -16,7 +16,7 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
-from mindbot.agent.models import (
+from src.mindbot.agent.models import (
     AgentEvent,
     ApprovalDecision,
     ToolApprovalRequest,
@@ -37,7 +37,7 @@ class ToolApprovalConfig:
         dangerous_tools: List of tools that require extra confirmation
     """
     security: ToolSecurityLevel = ToolSecurityLevel.ALLOWLIST
-    ask: ToolAskMode = ToolAskMode.ON_MISS
+    ask: ToolAskMode = ToolAskMode.OFF  # 默认不审批
     timeout: int = 300  # 5 minutes default
     whitelist: dict[str, list[str]] = field(default_factory=dict)
     dangerous_tools: list[str] = field(default_factory=lambda: ["delete_file", "remove_file", "rm"])

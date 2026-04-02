@@ -21,9 +21,9 @@ import importlib
 import inspect
 from typing import Any, Callable
 
-from mindbot.capability.models import CapabilityExecutionError, CapabilityNotFoundError
-from mindbot.generation.models import ImplementationType, ToolDefinition
-from mindbot.utils import get_logger, truncate
+from src.mindbot.capability.models import CapabilityExecutionError, CapabilityNotFoundError
+from src.mindbot.generation.models import ImplementationType, ToolDefinition
+from src.mindbot.utils import get_logger, truncate
 
 logger = get_logger("generation.executor")
 

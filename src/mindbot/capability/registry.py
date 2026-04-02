@@ -11,14 +11,14 @@ from __future__ import annotations
 
 from typing import Iterable
 
-from mindbot.capability.models import (
+from src.mindbot.capability.models import (
     Capability,
     CapabilityConflictError,
     CapabilityNotFoundError,
     CapabilityQuery,
     CapabilityType,
 )
-from mindbot.utils import get_logger
+from src.mindbot.utils import get_logger
 
 logger = get_logger("capability.registry")
 

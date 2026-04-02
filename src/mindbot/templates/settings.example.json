@@ -1,0 +1,85 @@
+{
+  "providers": {
+    "local-ollama": {
+      "type": "ollama",
+      "strategy": "round-robin",
+      "endpoints": [
+        {
+          "base_url": "http://localhost:11434",
+          "weight": 1,
+          "models": [
+            {
+              "id": "qwen3.5:2b",
+              "role": "chat",
+              "level": "medium",
+              "vision": false
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "agent": {
+    "model": "local-ollama/qwen3.5:2b",
+    "temperature": 0.7,
+    "max_tokens": 8192,
+    "max_tool_iterations": 20,
+    "approval": {
+      "security": "allowlist",
+      "ask": "off",
+      "timeout": 300
+    }
+  },
+  "routing": {
+    "auto": true,
+    "rules": [
+      {
+        "keywords": [
+          "代码",
+          "code",
+          "编程",
+          "函数",
+          "算法"
+        ],
+        "level": "high",
+        "priority": 10
+      },
+      {
+        "keywords": [
+          "你好",
+          "简单",
+          "快"
+        ],
+        "level": "low",
+        "priority": 5
+      }
+    ]
+  },
+  "memory": {
+    "storage_path": "~/.mindbot/data/memory.db",
+    "markdown_path": "~/.mindbot/data/memory",
+    "short_term_retention_days": 7
+  },
+  "context": {
+    "max_tokens": 8000,
+    "compression": "truncate"
+  },
+  "session_journal": {
+    "enabled": true,
+    "path": "~/.mindbot/data/journal"
+  },
+  "multimodal": {
+    "max_images": 10,
+    "max_file_size_mb": 20
+  },
+  "channels": {
+    "http": {
+      "enabled": false,
+      "host": "0.0.0.0",
+      "port": 31211
+    },
+    "cli": {
+      "enabled": false
+    }
+  }
+}

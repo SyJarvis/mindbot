@@ -1,7 +1,7 @@
 """MindBot cron module."""
 
-from mindbot.cron.service import CronService
-from mindbot.cron.types import (
+from src.mindbot.cron.service import CronService
+from src.mindbot.cron.types import (
     CronJob,
     CronJobState,
     CronPayload,

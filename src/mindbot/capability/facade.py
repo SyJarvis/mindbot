@@ -1,6 +1,6 @@
 """Capability facade – the single entry point for upper-layer code.
 
-Upper-layer modules (``AgentOrchestrator``, application services, etc.)
+Upper-layer modules (legacy orchestrators, application services, etc.)
 must depend **only** on :class:`CapabilityFacade` and the types in
 :mod:`~mindbot.capability.models`.  They must never import concrete backends
 or the registry/executor directly.
@@ -28,15 +28,15 @@ from __future__ import annotations
 
 from typing import Any
 
-from mindbot.capability.backends.base import ExtensionBackend
-from mindbot.capability.executor import CapabilityExecutor
-from mindbot.capability.models import (
+from src.mindbot.capability.backends.base import ExtensionBackend
+from src.mindbot.capability.executor import CapabilityExecutor
+from src.mindbot.capability.models import (
     Capability,
     CapabilityNotFoundError,
     CapabilityQuery,
 )
-from mindbot.capability.registry import CapabilityRegistry
-from mindbot.utils import get_logger
+from src.mindbot.capability.registry import CapabilityRegistry
+from src.mindbot.utils import get_logger
 
 logger = get_logger("capability.facade")
 

@@ -4,7 +4,7 @@
 演示：
 - 通过 MindAgent.register_child_agent() 注册子 Agent
 - 子 Agent 拥有独立的系统提示词和工具集
-- Supervisor 统一管理审批入口（resolve_approval 自动路由）
+- 每个 Agent 通过 TurnEngine 独立运行（InputBuilder → TurnEngine → PersistenceWriter）
 
 Run::
 

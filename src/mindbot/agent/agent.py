@@ -2,7 +2,7 @@
 
 Provides the core execution capabilities:
 - Multi-turn conversation with per-session context management (LRU-evicted)
-- Tool registration, approval, and execution via AgentOrchestrator
+- Tool registration and execution via TurnEngine
 - Streaming and non-streaming response modes
 - Optional memory integration
 - Configurable session cache size
@@ -17,22 +17,57 @@ from collections import OrderedDict
 from collections.abc import AsyncIterator, Callable
 from typing import TYPE_CHECKING, Any
 
-from mindbot.agent.interrupt import AgentExecution
-from mindbot.agent.models import AgentEvent, AgentResponse, StopReason
-from mindbot.agent.orchestrator import AgentOrchestrator
-from mindbot.agent.scheduler import Scheduler
-from mindbot.capability.backends.tooling import ToolRegistry
-from mindbot.capability.backends.tooling.models import Tool
-from mindbot.config.schema import ContextConfig, ToolApprovalConfig
-from mindbot.context import ContextManager
-from mindbot.providers.adapter import ProviderAdapter
-from mindbot.utils import get_logger
+from src.mindbot.agent.input_builder import InputBuilder
+from src.mindbot.agent.models import AgentEvent, AgentResponse, StopReason
+from src.mindbot.agent.persistence_writer import PersistenceWriter, ToolPersistence
+from src.mindbot.agent.turn_engine import TurnEngine
+from src.mindbot.capability.backends.tooling import ToolRegistry
+from src.mindbot.capability.backends.tooling.models import Tool
+from src.mindbot.config.schema import ContextConfig
+from src.mindbot.context import ContextManager
+from src.mindbot.providers.adapter import ProviderAdapter
+from src.mindbot.utils import get_logger
 
 if TYPE_CHECKING:
-    from mindbot.capability.facade import CapabilityFacade
-    from mindbot.memory.manager import MemoryManager
+    from src.mindbot.capability.backends.tool_backend import ToolBackend
+    from src.mindbot.capability.facade import CapabilityFacade
+    from src.mindbot.generation.dynamic_manager import DynamicToolManager
+    from src.mindbot.memory.manager import MemoryManager
 
 logger = get_logger("agent")
+
+
+def _capability_to_llm_tool(capability: Any) -> Tool:
+    """Convert a capability back into a provider-bindable Tool proxy."""
+    return Tool(
+        name=capability.name,
+        description=capability.description,
+        parameters_schema_override=capability.parameters_schema,
+        handler=None,
+    )
+
+
+def _normalize_registered_tool(tool: Any) -> Any:
+    """Adapt legacy tool-like objects to the current Tool model."""
+    if hasattr(tool, "parameters_json_schema"):
+        return tool
+
+    name = getattr(tool, "name", type(tool).__name__)
+    description = getattr(tool, "description", "")
+    parameters = getattr(tool, "parameters", None)
+    handler = getattr(tool, "handler", None)
+    if not callable(handler):
+        handler = getattr(tool, "run", None)
+    if not callable(handler):
+        handler = getattr(tool, "execute", None)
+
+    schema_override = parameters if isinstance(parameters, dict) else None
+    return Tool(
+        name=name,
+        description=description,
+        parameters_schema_override=schema_override,
+        handler=handler,
+    )
 
 
 class Agent:
@@ -41,9 +76,8 @@ class Agent:
     Each Agent instance manages:
     * An LLM provider (via ProviderAdapter).
     * A tool registry (populated via :meth:`register_tool`).
-    * Per-session context and orchestrator instances (LRU-evicted at
+    * Per-session context and TurnEngine instances (LRU-evicted at
       ``max_sessions`` to bound memory usage).
-    * An approval configuration that gates tool execution.
     * Optional memory integration (retrieval + persistence).
 
     Agents are composed inside :class:`~mindbot.agent.core.MindAgent` for
@@ -56,38 +90,40 @@ class Agent:
         llm: ProviderAdapter,
         tools: list[Tool] | None = None,
         system_prompt: str = "",
-        approval_config: ToolApprovalConfig | None = None,
         context_config: ContextConfig | None = None,
         memory: "MemoryManager | None" = None,
         memory_top_k: int = 5,
+        tool_persistence: ToolPersistence = "none",
         max_iterations: int = 20,
         max_sessions: int = 1000,
         capability_facade: "CapabilityFacade | None" = None,
+        tool_backend: "ToolBackend | None" = None,
+        dynamic_manager: "DynamicToolManager | None" = None,
     ) -> None:
         self.name = name
         self.llm = llm
         self.system_prompt = system_prompt
         self.memory = memory
         self._memory_top_k = memory_top_k
+        self._tool_persistence = tool_persistence
         self._max_iterations = max_iterations
         self._max_sessions = max_sessions
         self._context_config = context_config or ContextConfig()
-        # Phase 1: stored for propagation to orchestrators; not yet wired.
         self._capability_facade = capability_facade
+        self._tool_backend = tool_backend
+        self._dynamic_manager = dynamic_manager
 
         # Tool registry – pre-populate from constructor args
         self.tool_registry = ToolRegistry()
         for tool in (tools or []):
-            self.tool_registry.register(tool)
-
-        # Approval configuration
-        self._approval_config = approval_config or ToolApprovalConfig()
+            self.tool_registry.register(_normalize_registered_tool(tool))
 
         # Session-keyed caches (LRU via OrderedDict)
         self._sessions: OrderedDict[str, ContextManager] = OrderedDict()
-        self._orchestrators: OrderedDict[str, AgentOrchestrator] = OrderedDict()
+        self._turn_engines: OrderedDict[str, TurnEngine] = OrderedDict()
         # frozenset[tuple[name, id]] – detects same-name tool replacement
-        self._orchestrator_tool_signatures: dict[str, frozenset[tuple[str, int]]] = {}
+        self._turn_engine_tool_signatures: dict[str, frozenset[tuple[str, int]]] = {}
+        self._capability_tool_cache: dict[str, Tool] = {}
 
     # ------------------------------------------------------------------
     # Tool management
@@ -95,15 +131,64 @@ class Agent:
 
     def register_tool(self, tool: Any) -> None:
         """Register *tool* with this agent."""
-        self.tool_registry.register(tool)
+        normalized = _normalize_registered_tool(tool)
+        self.tool_registry.register(normalized)
+        if self._tool_backend is not None:
+            self._tool_backend.register_static(normalized, replace=True)
+        if self._capability_facade is not None:
+            self.refresh_capabilities()
         logger.debug(
             "Registered tool: %s",
-            tool.name if hasattr(tool, "name") else type(tool).__name__,
+            normalized.name if hasattr(normalized, "name") else type(normalized).__name__,
         )
 
     def list_tools(self) -> list[Any]:
         """Return all registered tools."""
+        if self._capability_facade is not None:
+            visible: list[Tool] = []
+            live_ids: set[str] = set()
+            for cap in self._capability_facade.list_capabilities():
+                live_ids.add(cap.id)
+                cached = self._capability_tool_cache.get(cap.id)
+                if (
+                    cached is None
+                    or cached.name != cap.name
+                    or cached.description != cap.description
+                    or cached.parameters_schema_override != cap.parameters_schema
+                ):
+                    cached = _capability_to_llm_tool(cap)
+                    self._capability_tool_cache[cap.id] = cached
+                visible.append(cached)
+            stale_ids = [cap_id for cap_id in self._capability_tool_cache if cap_id not in live_ids]
+            for cap_id in stale_ids:
+                del self._capability_tool_cache[cap_id]
+            return visible
         return self.tool_registry.list_tools()
+
+    def refresh_capabilities(self) -> None:
+        """Refresh capability-backed tools and invalidate cached orchestrators."""
+        if self._capability_facade is not None:
+            self._capability_facade.refresh_registry()
+        self._capability_tool_cache.clear()
+        self._turn_engines.clear()
+        self._turn_engine_tool_signatures.clear()
+
+    async def reload_tools(self) -> int:
+        """Reload persisted dynamic tools and refresh the capability view."""
+        if self._dynamic_manager is None:
+            self.refresh_capabilities()
+            return len(self.list_tools())
+        loaded = await self._dynamic_manager.reload_tools()
+        self.refresh_capabilities()
+        return loaded
+
+    def get_tool_count(self) -> int:
+        """Return the current visible tool count."""
+        return len(self.list_tools())
+
+    def has_tool(self, tool_name: str) -> bool:
+        """Return whether a tool is currently visible to the LLM."""
+        return any(getattr(tool, "name", None) == tool_name for tool in self.list_tools())
 
     # ------------------------------------------------------------------
     # Session management (LRU)
@@ -125,19 +210,18 @@ class Agent:
         if len(self._sessions) > self._max_sessions:
             evicted = next(iter(self._sessions))
             self._sessions.pop(evicted)
-            self._orchestrators.pop(evicted, None)
-            self._orchestrator_tool_signatures.pop(evicted, None)
+            self._turn_engines.pop(evicted, None)
+            self._turn_engine_tool_signatures.pop(evicted, None)
             logger.debug("Evicted session from LRU cache: %s", evicted)
 
         return ctx
 
-    def _get_session_scheduler(self, session_id: str) -> Scheduler:
-        """Build a :class:`~mindbot.agent.scheduler.Scheduler` for *session_id*."""
+    def _get_session_input_builder(self, session_id: str) -> InputBuilder:
+        """Build an :class:`~mindbot.agent.input_builder.InputBuilder` for *session_id*."""
         context = self._get_session_context(session_id)
-        return Scheduler(
+        return InputBuilder(
             context=context,
             memory=self.memory,
-            tool_registry=self.tool_registry,
             memory_top_k=self._memory_top_k,
             system_prompt=self.system_prompt,
         )
@@ -162,31 +246,61 @@ class Agent:
     # Orchestrator cache (per session)
     # ------------------------------------------------------------------
 
-    def _get_orchestrator(
+    def _get_turn_engine(
         self,
         session_id: str,
         effective_tools: list[Any],
-    ) -> AgentOrchestrator:
-        """Return the orchestrator for *session_id*, rebuilding if tools changed."""
+    ) -> TurnEngine:
+        """Return the turn engine for *session_id*, rebuilding if tools changed."""
         tool_signature = self._get_tool_signature(effective_tools)
-        cached_sig = self._orchestrator_tool_signatures.get(session_id)
+        cached_sig = self._turn_engine_tool_signatures.get(session_id)
 
-        if session_id not in self._orchestrators or cached_sig != tool_signature:
-            orchestrator = AgentOrchestrator(
+        if session_id not in self._turn_engines or cached_sig != tool_signature:
+            turn_engine = TurnEngine(
                 llm=self.llm,
                 tools=effective_tools,
-                approval_config=self._approval_config,
                 max_iterations=self._max_iterations,
                 capability_facade=self._capability_facade,
             )
-            self._orchestrators[session_id] = orchestrator
-            self._orchestrators.move_to_end(session_id)
-            self._orchestrator_tool_signatures[session_id] = tool_signature
-            logger.debug("Built orchestrator for agent=%s session=%s", self.name, session_id)
+            self._turn_engines[session_id] = turn_engine
+            self._turn_engines.move_to_end(session_id)
+            self._turn_engine_tool_signatures[session_id] = tool_signature
+            logger.debug("Built turn engine for agent=%s session=%s", self.name, session_id)
         else:
-            self._orchestrators.move_to_end(session_id)
+            self._turn_engines.move_to_end(session_id)
 
-        return self._orchestrators[session_id]
+        return self._turn_engines[session_id]
+
+    def _get_persistence_writer(self, session_id: str) -> PersistenceWriter:
+        """Build a :class:`PersistenceWriter` for *session_id*."""
+        context = self._get_session_context(session_id)
+        return PersistenceWriter(
+            context=context,
+            memory=self.memory,
+            tool_persistence=self._tool_persistence,
+            system_prompt=self.system_prompt,
+        )
+
+    async def _run_turn(
+        self,
+        *,
+        message: str,
+        session_id: str,
+        effective_tools: list[Any],
+        on_event: Callable[[AgentEvent], None] | None = None,
+    ) -> AgentResponse:
+        """Run one turn through the shared execution path."""
+        input_builder = self._get_session_input_builder(session_id)
+        messages = input_builder.build(message, session_id=session_id)
+        turn_engine = self._get_turn_engine(session_id, effective_tools)
+        response = await turn_engine.run(
+            messages=messages,
+            on_event=on_event,
+        )
+
+        writer = self._get_persistence_writer(session_id)
+        writer.commit_turn(message, response, session_id=session_id)
+        return response
 
     # ------------------------------------------------------------------
     # Chat interfaces
@@ -211,28 +325,14 @@ class Agent:
         Returns:
             :class:`~mindbot.agent.models.AgentResponse`
         """
-        effective_tools = tools if tools is not None else self.tool_registry.list_tools()
+        effective_tools = tools if tools is not None else self.list_tools()
 
-        # Per-call tool overrides are always auto-approved
-        if tools is not None:
-            for t in effective_tools:
-                name = t.name if hasattr(t, "name") else type(t).__name__
-                self._approval_config.add_to_whitelist(name, pattern=".*")
-
-        scheduler = self._get_session_scheduler(session_id)
-        messages = scheduler.assemble(message, session_id=session_id)
-        orchestrator = self._get_orchestrator(session_id, effective_tools)
-        execution = AgentExecution()
-
-        response = await orchestrator.chat(
-            messages=messages,
+        response = await self._run_turn(
+            message=message,
+            session_id=session_id,
+            effective_tools=effective_tools,
             on_event=on_event,
-            execution=execution,
         )
-
-        assistant_text = response.content or ""
-        scheduler.commit(message, assistant_text)
-        scheduler.save_to_memory(message, assistant_text)
 
         logger.info(
             "chat: agent=%s session=%s stop_reason=%s",
@@ -257,89 +357,19 @@ class Agent:
         Yields:
             String chunks of the assistant response.
         """
-        effective_tools = tools if tools is not None else self.tool_registry.list_tools()
-
-        if not effective_tools:
-            scheduler = self._get_session_scheduler(session_id)
-            messages = scheduler.assemble(message, session_id=session_id)
-
-            full_content = ""
-            async for chunk in self.llm.chat_stream(messages):
-                full_content += chunk
-                yield chunk
-
-            scheduler.commit(message, full_content)
-            scheduler.save_to_memory(message, full_content)
-        else:
-            response = await self.chat(message=message, session_id=session_id, tools=tools)
-            if response.content:
-                yield response.content
-
-    # ------------------------------------------------------------------
-    # Approval & input forwarding
-    # ------------------------------------------------------------------
-
-    def resolve_approval(
-        self,
-        request_id: str,
-        decision: str,
-        session_id: str = "default",
-    ) -> None:
-        """Resolve a pending tool approval request for *session_id*."""
-        orchestrator = self._orchestrators.get(session_id)
-        if orchestrator:
-            orchestrator.resolve_approval(request_id, decision)
-
-    def provide_input(
-        self,
-        request_id: str,
-        input_text: str,
-        session_id: str = "default",
-    ) -> None:
-        """Provide input for a pending user-input request."""
-        orchestrator = self._orchestrators.get(session_id)
-        if orchestrator:
-            orchestrator.provide_input(request_id, input_text)
-
-    def add_tool_to_whitelist(
-        self,
-        tool_name: str,
-        pattern: str = ".*",
-        session_id: str | None = None,
-    ) -> None:
-        """Add *tool_name* to the approval whitelist.
-
-        When *session_id* is given the live orchestrator for that session is
-        also updated; otherwise only the shared approval_config is changed
-        (takes effect on the next orchestrator rebuild for each session).
-        """
-        self._approval_config.add_to_whitelist(tool_name, pattern)
-        if session_id:
-            orchestrator = self._orchestrators.get(session_id)
-            if orchestrator:
-                orchestrator.add_tool_to_whitelist(tool_name, pattern)
-
-    def remove_tool_from_whitelist(
-        self,
-        tool_name: str,
-        session_id: str | None = None,
-    ) -> None:
-        """Remove *tool_name* from the approval whitelist."""
-        self._approval_config.remove_from_whitelist(tool_name)
-        if session_id:
-            orchestrator = self._orchestrators.get(session_id)
-            if orchestrator:
-                orchestrator.remove_tool_from_whitelist(tool_name)
-
-    @property
-    def approval_config(self) -> ToolApprovalConfig:
-        """The approval configuration for this agent."""
-        return self._approval_config
+        effective_tools = tools if tools is not None else self.list_tools()
+        response = await self._run_turn(
+            message=message,
+            session_id=session_id,
+            effective_tools=effective_tools,
+        )
+        if response.content:
+            yield response.content
 
     # ------------------------------------------------------------------
     # Repr
     # ------------------------------------------------------------------
 
     def __repr__(self) -> str:
-        tool_names = [t.name for t in self.tool_registry.list_tools()]
+        tool_names = [t.name for t in self.list_tools()]
         return f"Agent(name={self.name!r}, tools={tool_names!r})"

@@ -31,21 +31,20 @@ def on_event(event: AgentEvent) -> None:
     """Print a summary line for each agent event."""
     match event.type:
         case EventType.THINKING:
-            print(f"  [⚙️  thinking] turn={event.data.get('turn', 0)}")
-        case EventType.TOOL_CALL_REQUEST:
-            print(
-                f"  [🔧 tool_call_request] {event.data['tool_name']}("
-                f"{event.data['arguments']})"
-            )
+            print(f"  [thinking] turn={event.data.get('turn', 0)}")
+        case EventType.DELTA:
+            # Streaming content chunk — show a preview
+            preview = event.data.get("content", "")[:40]
+            print(f"  [delta] {preview!r}")
         case EventType.TOOL_EXECUTING:
-            print(f"  [▶  tool_executing] {event.data['tool_name']}")
+            print(f"  [tool_executing] {event.data['tool_name']}")
         case EventType.TOOL_RESULT:
             result_preview = str(event.data.get("result", ""))[:80]
-            print(f"  [✅ tool_result] {event.data['tool_name']} → {result_preview!r}")
+            print(f"  [tool_result] {event.data['tool_name']} -> {result_preview!r}")
         case EventType.COMPLETE:
-            print(f"  [🏁 complete] stop_reason={event.data['stop_reason']}")
+            print(f"  [complete] stop_reason={event.data['stop_reason']}")
         case EventType.ERROR:
-            print(f"  [❌ error] {event.data['message']}")
+            print(f"  [error] {event.data['message']}")
         case _:
             print(f"  [event] {event.type.value}")
 

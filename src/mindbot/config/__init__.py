@@ -8,12 +8,15 @@ from mindbot.config.schema import (
     ContextConfig,
     MemoryConfig,
     ModelConfig,
+    EndpointConfig,
     MultimodalConfig,
-    ProviderConfig,
+    ProviderInstanceConfig,
+    ProviderConfig,  # backward-compat alias
     RoutingConfig,
     RoutingRule,
     SessionJournalConfig,
     ToolPersistenceStrategy,
+    KNOWN_PROVIDER_TYPES,
 )
 
 __all__ = [
@@ -22,12 +25,15 @@ __all__ = [
     "ContextConfig",
     "MemoryConfig",
     "ModelConfig",
+    "EndpointConfig",
     "MultimodalConfig",
+    "ProviderInstanceConfig",
     "ProviderConfig",
     "RoutingConfig",
     "RoutingRule",
     "SessionJournalConfig",
     "ToolPersistenceStrategy",
+    "KNOWN_PROVIDER_TYPES",
     "VISION_PATTERNS",
     "load_config",
 ]

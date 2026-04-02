@@ -9,15 +9,15 @@ from __future__ import annotations
 
 from typing import Any
 
-from mindbot.capability.backends.base import ExtensionBackend
-from mindbot.capability.models import (
+from src.mindbot.capability.backends.base import ExtensionBackend
+from src.mindbot.capability.models import (
     Capability,
     CapabilityExecutionError,
     CapabilityNotFoundError,
     CapabilityQuery,
 )
-from mindbot.capability.registry import CapabilityRegistry
-from mindbot.utils import get_logger
+from src.mindbot.capability.registry import CapabilityRegistry
+from src.mindbot.utils import get_logger
 
 logger = get_logger("capability.executor")
 
@@ -57,7 +57,7 @@ class CapabilityExecutor:
                 (default) a :exc:`~mindbot.capability.models.CapabilityConflictError`
                 is raised on ID conflicts.
         """
-        from mindbot.capability.models import CapabilityConflictError
+        from src.mindbot.capability.models import CapabilityConflictError
 
         capabilities = backend.list_capabilities()
         for cap in capabilities:

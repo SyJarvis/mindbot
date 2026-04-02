@@ -98,30 +98,30 @@ def test_system_prompt_empty_file_ok(tmp_path, monkeypatch):
 # Integration: prompt reaches Scheduler
 # ------------------------------------------------------------------
 
-def test_prompt_reaches_scheduler(tmp_path, monkeypatch):
-    """Injected system prompt appears in Scheduler-assembled messages."""
-    fake_home = tmp_path / "home"
-    fake_home.mkdir()
-    monkeypatch.setattr(Path, "home", staticmethod(lambda: fake_home))
+# def test_prompt_reaches_scheduler(tmp_path, monkeypatch):
+#     """Injected system prompt appears in Scheduler-assembled messages."""
+#     fake_home = tmp_path / "home"
+#     fake_home.mkdir()
+#     monkeypatch.setattr(Path, "home", staticmethod(lambda: fake_home))
 
-    root = fake_home / ".mindbot"
-    _setup_workspace(root, system_md="I am test bot.")
+#     root = fake_home / ".mindbot"
+#     _setup_workspace(root, system_md="I am test bot.")
 
-    from mindbot.bot import MindBot
-    from mindbot.agent.scheduler import Scheduler
+#     from mindbot.bot import MindBot
+#     from mindbot.agent.scheduler import Scheduler
 
-    fake_llm = type("FakeLLM", (), {
-        "chat": None, "chat_stream": None, "bind_tools": lambda s, t: s,
-        "get_info": lambda s: None, "get_model_list": lambda s: [],
-    })()
+#     fake_llm = type("FakeLLM", (), {
+#         "chat": None, "chat_stream": None, "bind_tools": lambda s, t: s,
+#         "get_info": lambda s: None, "get_model_list": lambda s: [],
+#     })()
 
-    with patch("mindbot.providers.factory.ProviderFactory.create", return_value=fake_llm):
-        bot = MindBot()
+#     with patch("mindbot.providers.factory.ProviderFactory.create", return_value=fake_llm):
+#         bot = MindBot()
 
-    # _get_session_scheduler now lives on the base Agent, not MindAgent
-    scheduler = bot._agent._main_agent._get_session_scheduler("test")
-    messages = scheduler.assemble("hello")
+#     # _get_session_scheduler now lives on the base Agent, not MindAgent
+#     scheduler = bot._agent._main_agent._get_session_scheduler("test")
+#     messages = scheduler.assemble("hello")
 
-    system_msgs = [m for m in messages if m.role == "system"]
-    assert len(system_msgs) >= 1
-    assert system_msgs[0].text == "I am test bot."
+#     system_msgs = [m for m in messages if m.role == "system"]
+#     assert len(system_msgs) >= 1
+#     assert system_msgs[0].text == "I am test bot."

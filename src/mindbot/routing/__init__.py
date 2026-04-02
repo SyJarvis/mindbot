@@ -14,10 +14,10 @@ Usage::
     # Automatically routes to best model/endpoint
 """
 
-from mindbot.routing.models import ModelCandidate, RoutingDecision
-from mindbot.routing.router import ModelRouter
-from mindbot.routing.endpoint import EndpointManager
-from mindbot.routing.adapter import RoutingProviderAdapter
+from src.mindbot.routing.models import ModelCandidate, RoutingDecision
+from src.mindbot.routing.router import ModelRouter
+from src.mindbot.routing.endpoint import EndpointManager
+from src.mindbot.routing.adapter import RoutingProviderAdapter
 
 __all__ = [
     "ModelCandidate",

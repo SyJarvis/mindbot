@@ -5,7 +5,7 @@ from typing import Callable, Awaitable
 
 from loguru import logger
 
-from mindbot.bus.events import InboundMessage, OutboundMessage
+from src.mindbot.bus.events import InboundMessage, OutboundMessage
 
 
 class MessageBus:

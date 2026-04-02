@@ -1,4 +1,4 @@
-"""ModelRouter – selects the most appropriate (provider, endpoint, model) for a request.
+"""ModelRouter – selects the most appropriate (instance, endpoint, model) for a request.
 
 Selection priority (highest to lowest):
 1. Media rule: if the conversation contains images, prefer a vision-capable model.
@@ -13,10 +13,10 @@ import re
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from mindbot.config.schema import Config, ModelConfig
-    from mindbot.context.models import Message
+    from src.mindbot.config.schema import Config, ModelConfig
+    from src.mindbot.context.models import Message
 
-from mindbot.routing.models import ModelCandidate, RoutingDecision
+from src.mindbot.routing.models import ModelCandidate, RoutingDecision
 
 
 class ComplexityScorer:
@@ -93,6 +93,10 @@ class ModelRouter:
         self._scorer = ComplexityScorer()
         self._cached_candidates: list[ModelCandidate] | None = None
 
+    def invalidate_cache(self) -> None:
+        """Clear cached candidates (call after config reload)."""
+        self._cached_candidates = None
+
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
@@ -129,8 +133,8 @@ class ModelRouter:
         )
 
     def get_model_list(self) -> list[str]:
-        """Return all available models as "provider/endpoint/model" strings."""
-        return [c.key for c in self._collect_all_candidates()]
+        """Return all available models as "instance/model" strings."""
+        return [f"{c.instance}/{c.model_id}" for c in self._collect_all_candidates()]
 
     # ------------------------------------------------------------------
     # Selection helpers
@@ -142,16 +146,15 @@ class ModelRouter:
         """Find candidates matching *level*; fall back to adjacent levels."""
         candidates = self._collect_candidates_by_level(level)
         if not candidates:
-            # Widen: try all candidates
             candidates = self._collect_all_candidates()
         if not candidates:
-            # Last resort: use the default agent model
             return self._default_decision(rule_hit=rule_hit, score=score)
 
         primary = candidates[0]
-        fallbacks = [(c.provider, c.endpoint_index, c.model_id) for c in candidates[1:]]
+        fallbacks = [(c.instance, c.endpoint_index, c.model_id) for c in candidates[1:]]
         return RoutingDecision(
-            provider=primary.provider,
+            instance=primary.instance,
+            provider_type=primary.provider_type,
             endpoint_index=primary.endpoint_index,
             model_id=primary.model_id,
             level=primary.level,
@@ -170,7 +173,6 @@ class ModelRouter:
             candidates = self._collect_all_candidates()
 
         if not candidates:
-            # Fall back to complexity-based selection
             score, level, _ = self._scorer.score(text)
             return self._select_by_level(
                 level,
@@ -179,9 +181,10 @@ class ModelRouter:
             )
 
         primary = candidates[0]
-        fallbacks = [(c.provider, c.endpoint_index, c.model_id) for c in candidates[1:]]
+        fallbacks = [(c.instance, c.endpoint_index, c.model_id) for c in candidates[1:]]
         return RoutingDecision(
-            provider=primary.provider,
+            instance=primary.instance,
+            provider_type=primary.provider_type,
             endpoint_index=primary.endpoint_index,
             model_id=primary.model_id,
             level=primary.level,
@@ -192,10 +195,12 @@ class ModelRouter:
 
     def _default_decision(self, *, rule_hit: str, score: float) -> RoutingDecision:
         """Fallback when no model is found in config."""
-        provider, model_id = self._parse_model_ref(self._config.agent.model)
+        instance, model_id = self._parse_model_ref(self._config.agent.model)
+        provider_type = self._get_provider_type(instance)
         return RoutingDecision(
-            provider=provider,
-            endpoint_index="0",  # Default to first endpoint
+            instance=instance,
+            provider_type=provider_type,
+            endpoint_index="0",
             model_id=model_id,
             level="medium",
             rule_hit=rule_hit + "(fallback:default)",
@@ -208,24 +213,23 @@ class ModelRouter:
     # ------------------------------------------------------------------
 
     def _collect_all_candidates(self) -> list[ModelCandidate]:
-        """Return all models declared across all providers and endpoints."""
+        """Return all models declared across all provider instances and endpoints."""
         if self._cached_candidates is not None:
             return self._cached_candidates
 
         candidates: list[ModelCandidate] = []
-        for provider_name, provider_cfg in self._config.providers.items():
+        for instance_name, provider_cfg in self._config.providers.items():
             for endpoint_idx, model_id, model_config in provider_cfg.get_all_models():
                 if isinstance(model_config, str):
-                    # This shouldn't happen with the new get_all_models implementation
                     continue
 
-                # Check if model is enabled
                 if hasattr(model_config, "enabled") and not model_config.enabled:
                     continue
 
                 candidates.append(
                     ModelCandidate(
-                        provider=provider_name,
+                        instance=instance_name,
+                        provider_type=provider_cfg.type,
                         endpoint_index=endpoint_idx,
                         model_id=model_config.id,
                         level=getattr(model_config, "level", "medium"),
@@ -246,6 +250,15 @@ class ModelRouter:
         return [c for c in self._collect_all_candidates() if c.level == level]
 
     # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
+    def _get_provider_type(self, instance: str) -> str:
+        """Look up the backend driver type for a provider instance."""
+        cfg = self._config.providers.get(instance)
+        return cfg.type if cfg else "openai"
+
+    # ------------------------------------------------------------------
     # Rule matching
     # ------------------------------------------------------------------
 
@@ -254,17 +267,14 @@ class ModelRouter:
         """Return True if *text* matches the keyword rule."""
         lower = text.lower()
 
-        # Length constraints
         if rule.min_length is not None and len(text) < rule.min_length:
             return False
         if rule.max_length is not None and len(text) > rule.max_length:
             return False
 
-        # Keyword match (any keyword is sufficient)
         if rule.keywords:
             return any(kw.lower() in lower for kw in rule.keywords)
 
-        # Pure length-based rule (no keywords specified)
         return True
 
     @staticmethod
@@ -276,7 +286,6 @@ class ModelRouter:
                 if isinstance(msg.content, str):
                     text_parts.append(msg.content)
                 elif isinstance(msg.content, list):
-                    # Extract text parts, skip images
                     for part in msg.content:
                         if hasattr(part, "text"):
                             text_parts.append(part.text)
@@ -290,7 +299,6 @@ class ModelRouter:
         for msg in messages:
             if isinstance(msg.content, list):
                 for part in msg.content:
-                    # Check if it's an image part
                     if hasattr(part, "type") and part.type == "image":
                         return True
                     if hasattr(part, "image"):
@@ -299,8 +307,9 @@ class ModelRouter:
 
     @staticmethod
     def _parse_model_ref(model_ref: str) -> tuple[str, str]:
-        """Parse 'provider/model' or 'provider/endpoint/model' into (provider, model)."""
-        parts = model_ref.split("/")
-        if len(parts) >= 2:
-            return parts[0], parts[-1]  # provider, model (ignore endpoint in ref)
+        """Parse 'instance/model' into (instance, model)."""
+        if "/" in model_ref:
+            parts = model_ref.split("/")
+            if len(parts) >= 2:
+                return parts[0], parts[-1]
         return "unknown", model_ref

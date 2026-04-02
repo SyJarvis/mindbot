@@ -31,5 +31,5 @@ class OutboundMessage:
     chat_id: str
     content: str
     reply_to: str | None = None
-    media: list[str] = field(default_factory=list)
+    media: list[str] = field(default_factory=list)  # Attachment file paths for channels that support uploads
     metadata: dict[str, Any] = field(default_factory=dict)

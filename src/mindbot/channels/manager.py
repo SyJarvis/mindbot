@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from loguru import logger
 
-from mindbot.bus.events import OutboundMessage
-from mindbot.bus.queue import MessageBus
-from mindbot.channels.base import BaseChannel
+from src.mindbot.bus.events import OutboundMessage
+from src.mindbot.bus.outbound import build_outbound_message
+from src.mindbot.bus.queue import MessageBus
+from src.mindbot.channels.base import BaseChannel
 
 
 class ChannelManager:
@@ -26,6 +28,8 @@ class ChannelManager:
         self.bus = bus
         self.channels: dict[str, BaseChannel] = {}
         self._dispatch_task: asyncio.Task | None = None
+        self._inbound_task: asyncio.Task | None = None
+        self._chat_handler: Callable[[str, str], Awaitable[Any]] | None = None
 
         self._init_channels()
 
@@ -41,7 +45,7 @@ class ChannelManager:
         http_config = getattr(channels_config, "http", None)
         if http_config and getattr(http_config, "enabled", False):
             try:
-                from mindbot.channels.http import HTTPChannel
+                from src.mindbot.channels.http import HTTPChannel
                 self.channels["http"] = HTTPChannel(http_config, self.bus)
                 logger.info("HTTP channel enabled")
             except ImportError as e:
@@ -51,7 +55,7 @@ class ChannelManager:
         cli_config = getattr(channels_config, "cli", None)
         if cli_config and getattr(cli_config, "enabled", False):
             try:
-                from mindbot.channels.cli import CLIChannel
+                from src.mindbot.channels.cli import CLIChannel
                 self.channels["cli"] = CLIChannel(cli_config, self.bus)
                 logger.info("CLI channel enabled")
             except ImportError as e:
@@ -71,7 +75,7 @@ class ChannelManager:
         feishu_config = getattr(channels_config, "feishu", None)
         if feishu_config and getattr(feishu_config, "enabled", False):
             try:
-                from mindbot.channels.feishu import FeishuChannel
+                from src.mindbot.channels.feishu import FeishuChannel
                 self.channels["feishu"] = FeishuChannel(feishu_config, self.bus)
                 logger.info("Feishu channel enabled")
             except ImportError as e:
@@ -85,10 +89,16 @@ class ChannelManager:
             logger.error(f"Failed to start channel {name}: {e}")
 
     async def start_all(self) -> None:
-        """Start all channels and the outbound dispatcher."""
+        """Start all channels and the bus dispatchers."""
         if not self.channels:
             logger.warning("No channels enabled")
             return
+
+        if self._chat_handler is None:
+            logger.warning("No inbound chat handler configured; inbound bus messages will be ignored")
+
+        # Start inbound/outbound dispatchers before channels begin publishing.
+        self._inbound_task = asyncio.create_task(self._dispatch_inbound())
 
         # Start outbound dispatcher
         self._dispatch_task = asyncio.create_task(self._dispatch_outbound())
@@ -103,8 +113,16 @@ class ChannelManager:
         await asyncio.gather(*tasks, return_exceptions=True)
 
     async def stop_all(self) -> None:
-        """Stop all channels and the dispatcher."""
+        """Stop all channels and the bus dispatchers."""
         logger.info("Stopping all channels...")
+
+        # Stop inbound dispatcher
+        if self._inbound_task:
+            self._inbound_task.cancel()
+            try:
+                await self._inbound_task
+            except asyncio.CancelledError:
+                pass
 
         # Stop dispatcher
         if self._dispatch_task:
@@ -146,6 +164,51 @@ class ChannelManager:
                 continue
             except asyncio.CancelledError:
                 break
+
+    async def _dispatch_inbound(self) -> None:
+        """Consume inbound bus messages and route them through the unified chat handler."""
+        logger.info("Inbound dispatcher started")
+
+        while True:
+            try:
+                msg = await asyncio.wait_for(
+                    self.bus.consume_inbound(),
+                    timeout=1.0,
+                )
+
+                if self._chat_handler is None:
+                    logger.warning(f"Dropping inbound message from {msg.channel}: no chat handler configured")
+                    continue
+
+                session_id = msg.metadata.get("session_id", "default")
+                try:
+                    response = await self._chat_handler(msg.content, session_id)
+                    reply = build_outbound_message(
+                        channel=msg.channel,
+                        chat_id=msg.chat_id,
+                        response=response,
+                    )
+                except Exception as e:
+                    logger.error(f"Error handling inbound message from {msg.channel}: {e}")
+                    reply = OutboundMessage(
+                        channel=msg.channel,
+                        chat_id=msg.chat_id,
+                        content=f"Error: {e}",
+                    )
+
+                await self.bus.publish_outbound(reply)
+
+            except asyncio.TimeoutError:
+                continue
+            except asyncio.CancelledError:
+                break
+
+    def set_chat_handler(
+        self,
+        handler: Callable[[str, str], Awaitable[Any]],
+    ) -> None:
+        """Set the shared chat handler used for inbound bus messages."""
+        self._chat_handler = handler
 
     def get_channel(self, name: str) -> BaseChannel | None:
         """Get a channel by name."""

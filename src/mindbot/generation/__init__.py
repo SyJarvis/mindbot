@@ -12,16 +12,17 @@ Primary imports::
     from mindbot.generation.protocols import GenerationRequest, GenerationResult
 """
 
-from mindbot.generation.executor import DynamicToolExecutor
-from mindbot.generation.models import ImplementationType, ToolDefinition
-from mindbot.generation.protocols import (
+from src.mindbot.generation.executor import DynamicToolExecutor
+from src.mindbot.generation.models import ImplementationType, ToolDefinition
+from src.mindbot.generation.protocols import (
     GenerationRequest,
     GenerationResult,
     GenerationStatus,
 )
-from mindbot.generation.registry import ToolDefinitionRegistry
-from mindbot.generation.tool_generator import MockStrategy, PromptStrategy, ToolGenerator
-from mindbot.generation.validator import ToolDefinitionValidator
+from src.mindbot.generation.registry import ToolDefinitionRegistry
+from src.mindbot.generation.system_prompt_builder import build_system_prompt
+from src.mindbot.generation.tool_generator import MockStrategy, PromptStrategy, ToolGenerator
+from src.mindbot.generation.validator import ToolDefinitionValidator
 
 __all__ = [
     # Core models
@@ -40,4 +41,6 @@ __all__ = [
     "ToolDefinitionRegistry",
     # Execution
     "DynamicToolExecutor",
+    # Prompt builder
+    "build_system_prompt",
 ]

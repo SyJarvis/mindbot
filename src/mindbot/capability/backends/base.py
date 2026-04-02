@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Any, Protocol, runtime_checkable
 
-from mindbot.capability.models import Capability
+from src.mindbot.capability.models import Capability
 
 
 @runtime_checkable

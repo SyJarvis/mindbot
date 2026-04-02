@@ -5,12 +5,12 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING, Any
 
-from mindbot.providers.factory import ProviderFactory
-from mindbot.providers.param import BaseProviderParam
+from src.mindbot.providers.factory import ProviderFactory
+from src.mindbot.providers.param import BaseProviderParam
 
 if TYPE_CHECKING:
-    from mindbot.context.models import ChatResponse, Message, ProviderInfo
-    from mindbot.capability.backends.tooling.models import Tool
+    from src.mindbot.context.models import ChatResponse, Message, ProviderInfo
+    from src.mindbot.capability.backends.tooling.models import Tool
 
 
 class ProviderAdapter:
@@ -25,19 +25,25 @@ class ProviderAdapter:
         provider_type: str,
         config: Any,
     ) -> None:
-        # Handle both dict configs and providers dict from Config
-        if isinstance(config, dict) and provider_type in config:
-            # Single provider config dict
-            provider_config = config[provider_type]
-            if hasattr(provider_config, "model_dump"):
-                # Pydantic model - convert to dict
+        # provider_type is the backend driver (e.g. "openai", "ollama").
+        # config is a params dict like {"base_url": ..., "api_key": ..., "model": ...}
+        # or a Pydantic ProviderInstanceConfig model.
+        if hasattr(config, "get_effective_endpoints"):
+            # ProviderInstanceConfig – extract first endpoint params
+            endpoints = config.get_effective_endpoints()
+            if endpoints:
+                ep = endpoints[0]
                 provider_config = {
-                    "base_url": provider_config.base_url,
-                    "api_key": provider_config.api_key,
-                    "temperature": provider_config.temperature,
-                    "max_tokens": provider_config.max_tokens,
+                    "base_url": ep.base_url,
+                    "api_key": ep.api_key,
+                    "temperature": ep.temperature,
+                    "max_tokens": ep.max_tokens,
                 }
+            else:
+                provider_config = {}
             self._provider = ProviderFactory.create(provider_type, provider_config)
+        elif isinstance(config, dict):
+            self._provider = ProviderFactory.create(provider_type, config)
         else:
             self._provider = ProviderFactory.create(provider_type, config)
 

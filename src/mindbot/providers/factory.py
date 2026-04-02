@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from mindbot.providers.base import Provider
-from mindbot.providers.param import BaseProviderParam
+from src.mindbot.providers.base import Provider
+from src.mindbot.providers.param import BaseProviderParam
 
 
 class ProviderFactory:

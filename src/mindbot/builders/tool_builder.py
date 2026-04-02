@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from mindbot.capability.backends.tooling import ToolRegistry
+from src.mindbot.capability.backends.tooling import ToolRegistry
 
 
 def create_tool_registry(tools: list[Any] | None = None) -> ToolRegistry:

@@ -20,10 +20,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from mindbot.builders.model_ref import parse_model_ref
+from src.mindbot.builders.model_ref import parse_model_ref
 
 if TYPE_CHECKING:
-    from mindbot.config.schema import Config
+    from src.mindbot.config.schema import Config
 
 
 def create_llm(config: "Config") -> Any:
@@ -40,40 +40,44 @@ def create_llm(config: "Config") -> Any:
         An adapter that exposes ``chat`` / ``chat_stream`` / ``embed``.
     """
     if config.routing.auto:
-        from mindbot.routing import RoutingProviderAdapter
+        from src.mindbot.routing.adapter import RoutingProviderAdapter
         return RoutingProviderAdapter(config)
 
-    provider_type, model_name = parse_model_ref(config.agent.model)
-    provider_dict = _resolve_provider_params(config, provider_type, model_name)
+    instance_name, model_name = parse_model_ref(config.agent.model)
+    provider_dict = _resolve_provider_params(config, instance_name, model_name)
 
     # Trigger provider registration before calling the factory
-    import mindbot.providers  # noqa: F401
-    from mindbot.providers.factory import ProviderFactory
+    import src.mindbot.providers  # noqa: F401
+    from src.mindbot.providers.factory import ProviderFactory
 
-    return ProviderFactory.create(provider_type, provider_dict)
+    # Look up the driver type from the provider instance config
+    provider_cfg = config.providers.get(instance_name)
+    driver_type = provider_cfg.type if provider_cfg else instance_name
+
+    return ProviderFactory.create(driver_type, provider_dict)
 
 
 def _resolve_provider_params(
     config: "Config",
-    provider_type: str,
+    instance_name: str,
     model_name: str,
 ) -> dict[str, Any]:
-    """Build the provider param dict from *config* for *provider_type* / *model_name*.
+    """Build the provider param dict from *config* for *instance_name* / *model_name*.
 
     Resolution order:
-    1. Endpoint entries (from ``providers[provider_type].endpoints``).
+    1. Endpoint entries (from ``providers[instance_name].endpoints``).
     2. Top-level provider config fields (``base_url``, ``api_key``, …).
     3. Minimal fallback (model name only) when provider not declared.
 
     Args:
         config: Root MindBot configuration.
-        provider_type: Provider identifier, e.g. ``"ollama"``.
+        instance_name: Provider instance name (user-chosen key in config.providers).
         model_name: Model name passed through to the provider param.
 
     Returns:
-        A dict suitable for ``ProviderFactory.create(provider_type, ...)``.
+        A dict suitable for ``ProviderFactory.create(driver_type, ...)``.
     """
-    provider_config = config.providers.get(provider_type)
+    provider_config = config.providers.get(instance_name)
     if provider_config is None:
         return {"model": model_name}
 

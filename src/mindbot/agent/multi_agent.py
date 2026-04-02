@@ -1,8 +1,8 @@
 """Multi-agent orchestration – sequential and parallel execution modes.
 
-Uses the base :class:`~mindbot.agent.agent.Agent` (which itself uses
-:class:`~mindbot.agent.orchestrator.AgentOrchestrator`) so every agent in
-the pool benefits from approval, interrupt, and streaming support.
+Uses the base :class:`~mindbot.agent.agent.Agent`, which runs through the
+unified main path: ``InputBuilder.build()`` → ``TurnEngine.run()`` →
+``PersistenceWriter.commit_turn()``.
 """
 
 from __future__ import annotations
@@ -10,9 +10,9 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
-from mindbot.agent.agent import Agent
-from mindbot.agent.models import AgentResponse, StopReason
-from mindbot.utils import get_logger
+from src.mindbot.agent.agent import Agent
+from src.mindbot.agent.models import AgentResponse, StopReason
+from src.mindbot.utils import get_logger
 
 logger = get_logger("agent.multi")
 
@@ -43,9 +43,9 @@ class MultiAgentOrchestrator:
     * **parallel** – All registered agents run concurrently on the same task;
       their responses are merged with a separator.
 
-    Each agent in the pool is a fully-featured :class:`Agent` that uses
-    :class:`~mindbot.agent.orchestrator.AgentOrchestrator` internally, so
-    tool execution, approval, and interrupt handling work per-agent.
+    Each agent in the pool is a fully-featured :class:`Agent` that uses the
+    shared main path, so tool execution and conversation state remain
+    consistent per-agent.
     """
 
     def __init__(self) -> None:

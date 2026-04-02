@@ -15,9 +15,9 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from mindbot.config.schema import Config, EndpointConfig
+    from src.mindbot.config.schema import Config, EndpointConfig
 
-from mindbot.routing.models import EndpointCandidate
+from src.mindbot.routing.models import EndpointCandidate
 
 
 @dataclass
@@ -45,7 +45,6 @@ class EndpointHealth:
 
     def should_try(self) -> bool:
         """Check if endpoint should be tried."""
-        # Always try if healthy
         if self.is_healthy:
             return True
         # Try unhealthy endpoints after 60 seconds cooldown
@@ -68,62 +67,62 @@ class EndpointManager:
 
     def get_endpoint(
         self,
-        provider: str,
+        instance: str,
         endpoint_index: str | None = None,
         strategy: str | None = None,
     ) -> EndpointCandidate:
-        """Get an endpoint for the given provider.
+        """Get an endpoint for the given provider instance.
 
         Args:
-            provider: Provider name
+            instance: Provider instance name (user-chosen key in config.providers)
             endpoint_index: Specific endpoint index (if None, use strategy)
             strategy: Selection strategy (if None, use provider config)
 
         Returns:
             Selected endpoint candidate
         """
-        provider_cfg = self._config.providers.get(provider)
+        provider_cfg = self._config.providers.get(instance)
         if not provider_cfg:
-            raise ValueError(f"Provider not found: {provider}")
+            raise ValueError(f"Provider instance not found: {instance}")
 
         endpoints = provider_cfg.get_effective_endpoints()
         if not endpoints:
-            raise ValueError(f"No endpoints configured for provider: {provider}")
+            raise ValueError(f"No endpoints configured for provider instance: {instance}")
 
         # If specific endpoint requested, return it
         if endpoint_index is not None:
             idx = int(endpoint_index)
             if 0 <= idx < len(endpoints):
                 return EndpointCandidate(
-                    provider=provider,
+                    instance=instance,
                     endpoint_index=endpoint_index,
                     weight=endpoints[idx].weight,
                 )
 
         # Use strategy to select endpoint
         strategy = strategy or provider_cfg.strategy
-        idx = self._select_endpoint_index(provider, endpoints, strategy)
+        idx = self._select_endpoint_index(instance, endpoints, strategy)
         return EndpointCandidate(
-            provider=provider,
+            instance=instance,
             endpoint_index=str(idx),
             weight=endpoints[idx].weight,
         )
 
     def get_all_healthy_endpoints(
         self,
-        provider: str,
+        instance: str,
         include_unhealthy: bool = False,
     ) -> list[EndpointCandidate]:
-        """Get all healthy endpoints for a provider.
+        """Get all healthy endpoints for a provider instance.
 
         Args:
-            provider: Provider name
+            instance: Provider instance name
             include_unhealthy: If True, include unhealthy endpoints at the end
 
         Returns:
             List of endpoint candidates, sorted by health
         """
-        provider_cfg = self._config.providers.get(provider)
+        provider_cfg = self._config.providers.get(instance)
         if not provider_cfg:
             return []
 
@@ -132,11 +131,11 @@ class EndpointManager:
         unhealthy = []
 
         for idx, endpoint in enumerate(endpoints):
-            key = f"{provider}:{idx}"
+            key = f"{instance}:{idx}"
             health = self._health[key]
 
             candidate = EndpointCandidate(
-                provider=provider,
+                instance=instance,
                 endpoint_index=str(idx),
                 weight=endpoint.weight,
             )
@@ -151,23 +150,23 @@ class EndpointManager:
             result.extend(unhealthy)
         return result
 
-    def record_success(self, provider: str, endpoint_index: str) -> None:
+    def record_success(self, instance: str, endpoint_index: str) -> None:
         """Record a successful request."""
-        key = f"{provider}:{endpoint_index}"
+        key = f"{instance}:{endpoint_index}"
         self._health[key].record_success()
 
-    def record_failure(self, provider: str, endpoint_index: str) -> None:
+    def record_failure(self, instance: str, endpoint_index: str) -> None:
         """Record a failed request."""
-        key = f"{provider}:{endpoint_index}"
+        key = f"{instance}:{endpoint_index}"
         self._health[key].record_failure()
 
     def get_health_status(self) -> dict[str, dict[str, Any]]:
         """Get health status for all endpoints."""
         result = {}
         for key, health in self._health.items():
-            provider, endpoint_idx = key.split(":")
+            instance, endpoint_idx = key.split(":")
             result[key] = {
-                "provider": provider,
+                "instance": instance,
                 "endpoint_index": endpoint_idx,
                 "is_healthy": health.is_healthy,
                 "failures": health.failures,
@@ -176,31 +175,35 @@ class EndpointManager:
             }
         return result
 
+    def reset_health(self) -> None:
+        """Reset all health tracking (useful after config reload)."""
+        self._health.clear()
+        self._round_robin_indices.clear()
+
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
 
     def _select_endpoint_index(
         self,
-        provider: str,
+        instance: str,
         endpoints: list[EndpointConfig],
         strategy: str,
     ) -> int:
         """Select endpoint index based on strategy."""
         if strategy == "round-robin":
-            return self._select_round_robin(provider, len(endpoints))
+            return self._select_round_robin(instance, len(endpoints))
         elif strategy == "random":
             return self._select_weighted_random(endpoints)
         elif strategy == "priority":
             return self._select_priority(endpoints)
         else:
-            # Default to round-robin
-            return self._select_round_robin(provider, len(endpoints))
+            return self._select_round_robin(instance, len(endpoints))
 
-    def _select_round_robin(self, provider: str, count: int) -> int:
+    def _select_round_robin(self, instance: str, count: int) -> int:
         """Select next endpoint in round-robin fashion."""
-        idx = self._round_robin_indices[provider]
-        self._round_robin_indices[provider] = (idx + 1) % count
+        idx = self._round_robin_indices[instance]
+        self._round_robin_indices[instance] = (idx + 1) % count
         return idx
 
     @staticmethod

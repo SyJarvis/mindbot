@@ -3,8 +3,6 @@
 MindAgent acts as a Supervisor that:
 * Creates and owns a *main Agent* which handles conversation, tools, and memory.
 * Maintains a registry of named *child Agents* for sub-task delegation.
-* Exposes a unified approval / input gateway so callers never need to know
-  which underlying agent handles a particular session.
 * Writes an optional append-only Session Journal after each turn.
 * Keeps the same public API as before, so existing channels (CLI, HTTP,
   Feishu …) and the MindBot wrapper do not need changes.
@@ -15,19 +13,20 @@ from __future__ import annotations
 from collections.abc import AsyncIterator, Callable
 from typing import TYPE_CHECKING, Any
 
-from mindbot.agent.agent import Agent
-from mindbot.agent.models import AgentEvent, AgentResponse, StopReason, TurnResult
-from mindbot.builders import create_agent, create_llm
-from mindbot.capability.backends.tooling import ToolRegistry
-from mindbot.config.schema import Config, ToolApprovalConfig
-from mindbot.context.models import Message
-from mindbot.memory import MemoryManager
-from mindbot.session import SessionJournal
-from mindbot.session.types import SessionMessage
-from mindbot.utils import get_logger
+from src.mindbot.agent.agent import Agent
+from src.mindbot.agent.models import AgentEvent, AgentResponse, StopReason, TurnResult
+from src.mindbot.builders import create_agent, create_llm
+from src.mindbot.capability.backends.tooling import ToolRegistry
+from src.mindbot.config.schema import Config
+from src.mindbot.context.models import Message
+from src.mindbot.memory import MemoryManager
+from src.mindbot.session import SessionJournal
+from src.mindbot.session.types import SessionMessage
+from src.mindbot.utils import get_logger
 
 if TYPE_CHECKING:
-    from mindbot.capability.facade import CapabilityFacade
+    from src.mindbot.agent.persistence_writer import PersistenceWriter as _PersistenceWriter
+    from src.mindbot.capability.facade import CapabilityFacade
 
 logger = get_logger("agent.core")
 
@@ -40,7 +39,6 @@ class MindAgent:
     - Tool calling support (delegated to main Agent)
     - Memory integration (delegated to main Agent)
     - Child agent registry for sub-task delegation
-    - Unified approval / input entry point across all managed agents
     - Optional session journal persistence
     - MessageBus integration for channel communication
     """
@@ -113,11 +111,6 @@ class MindAgent:
         """The tool registry of the main agent."""
         return self._main_agent.tool_registry
 
-    @property
-    def approval_config(self) -> ToolApprovalConfig:
-        """The approval configuration of the main agent."""
-        return self._main_agent.approval_config
-
     # ------------------------------------------------------------------
     # Child agent management
     # ------------------------------------------------------------------
@@ -146,6 +139,27 @@ class MindAgent:
     def list_tools(self) -> list[Any]:
         """List tools registered with the main agent."""
         return self._main_agent.list_tools()
+
+    def refresh_capabilities(self) -> None:
+        """Refresh capabilities on the main agent and all child agents."""
+        self._main_agent.refresh_capabilities()
+        for child in self._child_agents.values():
+            child.refresh_capabilities()
+
+    async def reload_tools(self) -> int:
+        """Reload persisted tools on the main agent and refresh all agents."""
+        loaded = await self._main_agent.reload_tools()
+        for child in self._child_agents.values():
+            child.refresh_capabilities()
+        return loaded
+
+    def get_tool_count(self) -> int:
+        """Return the current visible tool count."""
+        return self._main_agent.get_tool_count()
+
+    def has_tool(self, tool_name: str) -> bool:
+        """Return whether the main agent currently exposes *tool_name*."""
+        return self._main_agent.has_tool(tool_name)
 
     # ------------------------------------------------------------------
     # Session Journal helpers
@@ -195,12 +209,37 @@ class MindAgent:
         if trace:
             entries.extend(self._msgs_to_journal(trace))
 
-        entries.append(SessionMessage(role="assistant", content=assistant_content))
+        # The authoritative trace already includes the final assistant
+        # message when produced by TurnEngine.  Only append an explicit
+        # assistant entry when there is no trace (e.g. streaming mode).
+        trace_has_final = (
+            trace
+            and trace[-1].role == "assistant"
+            and not trace[-1].tool_calls
+        )
+        if not trace_has_final:
+            entries.append(SessionMessage(role="assistant", content=assistant_content))
+
         self._journal.append(session_id, entries)
 
     # ------------------------------------------------------------------
     # Chat interfaces
     # ------------------------------------------------------------------
+
+    def _get_journal_writer(self, session_id: str) -> "_PersistenceWriter | None":
+        """Return a writer that handles journal-only persistence for this session."""
+        if self._journal is None:
+            return None
+        from src.mindbot.agent.persistence_writer import PersistenceWriter
+
+        ctx = self._main_agent._get_session_context(session_id)
+        writer = PersistenceWriter(
+            context=ctx,
+            journal=self._journal,
+            system_prompt=self.config.agent.system_prompt,
+        )
+        writer._journal_sessions = self._journal_sessions
+        return writer
 
     async def chat(
         self,
@@ -266,59 +305,7 @@ class MindAgent:
             full_content += chunk
             yield chunk
 
-        # Journal write after stream completes (no intermediate trace in stream mode)
         self._write_journal(session_id, user_message=message, assistant_content=full_content)
-
-    # ------------------------------------------------------------------
-    # Approval / input gateway (unified across all managed agents)
-    # ------------------------------------------------------------------
-
-    def resolve_approval(
-        self,
-        request_id: str,
-        decision: str,
-        session_id: str = "default",
-    ) -> None:
-        """Resolve a pending tool approval request.
-
-        Forwards to the main agent and all child agents so the decision
-        reaches whichever agent is waiting.
-        """
-        self._main_agent.resolve_approval(request_id, decision, session_id)
-        for child in self._child_agents.values():
-            child.resolve_approval(request_id, decision, session_id)
-
-    def provide_input(
-        self,
-        request_id: str,
-        input_text: str,
-        session_id: str = "default",
-    ) -> None:
-        """Provide input for a pending user-input request across all agents."""
-        self._main_agent.provide_input(request_id, input_text, session_id)
-        for child in self._child_agents.values():
-            child.provide_input(request_id, input_text, session_id)
-
-    def abort_execution(self, session_id: str = "default") -> None:
-        """Signal abort for *session_id* (placeholder – log only for now)."""
-        logger.info("Abort requested for session: %s", session_id)
-
-    def add_tool_to_whitelist(
-        self,
-        tool_name: str,
-        pattern: str = ".*",
-        session_id: str = "default",
-    ) -> None:
-        """Add *tool_name* to the main agent's approval whitelist."""
-        self._main_agent.add_tool_to_whitelist(tool_name, pattern, session_id)
-
-    def remove_tool_from_whitelist(
-        self,
-        tool_name: str,
-        session_id: str = "default",
-    ) -> None:
-        """Remove *tool_name* from the main agent's approval whitelist."""
-        self._main_agent.remove_tool_from_whitelist(tool_name, session_id)
 
     # ------------------------------------------------------------------
     # Memory interfaces
@@ -334,24 +321,6 @@ class MindAgent:
     def search_memory(self, query: str, top_k: int = 5) -> list[Any]:
         """Search the main agent's memory."""
         return self._main_agent.memory.search(query, top_k=top_k)
-
-    # ------------------------------------------------------------------
-    # MessageBus integration
-    # ------------------------------------------------------------------
-
-    async def process_inbound_message(
-        self,
-        content: str,
-        session_id: str = "default",
-        use_tools: bool = False,  # kept for backward compat; ignored
-    ) -> str:
-        """Process an inbound message from the MessageBus.
-
-        Delegates to :meth:`chat` so all inbound messages go through the
-        full memory-saving and tool-execution pipeline.
-        """
-        response = await self.chat(content, session_id=session_id)
-        return response.content
 
     # ------------------------------------------------------------------
     # Deprecated compatibility shims – kept for one release cycle

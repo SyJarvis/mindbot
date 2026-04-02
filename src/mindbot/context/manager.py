@@ -9,11 +9,11 @@ from pathlib import Path
 from dataclasses import dataclass, field
 from typing import Any
 
-from mindbot.config.schema import ContextBlocksConfig, ContextConfig
-from mindbot.context.checkpoint import Checkpoint
-from mindbot.context.compression import CompressionStrategy, TruncateStrategy
-from mindbot.context.models import Message, MessageRole
-from mindbot.utils import estimate_tokens, get_logger
+from src.mindbot.config.schema import ContextBlocksConfig, ContextConfig
+from src.mindbot.context.checkpoint import Checkpoint
+from src.mindbot.context.compression import CompressionStrategy, TruncateStrategy
+from src.mindbot.context.models import Message, MessageRole
+from src.mindbot.utils import estimate_tokens, get_logger
 
 logger = get_logger("context.manager")
 
@@ -21,7 +21,8 @@ logger = get_logger("context.manager")
 _DEFAULT_RATIOS: dict[str, float] = {
     "system_identity": 0.15,
     "memory": 0.20,
-    "conversation": 0.50,
+    "conversation": 0.40,
+    "intent_state": 0.10,
     "user_input": 0.15,
 }
 
@@ -65,14 +66,15 @@ class ContextManager:
     This class is a **pure state + compression** component at Layer 3 of the
     architecture.  It owns the block-based context window and token budgets
     but does **not** perform cross-subsystem orchestration (memory retrieval,
-    tool coordination, etc.).  That responsibility belongs to the
-    :class:`~mindbot.agent.scheduler.Scheduler` at Layer 2.
+    tool coordination, etc.).  Assembly of the final LLM prompt is the
+    responsibility of :class:`~mindbot.agent.input_builder.InputBuilder`.
 
-    Blocks (in message-assembly order):
+    Blocks (in canonical order):
 
     * **system_identity** – system prompt / persona.
-    * **memory** – retrieved memory chunks (populated by Scheduler each turn).
+    * **memory** – retrieved memory chunks (populated per turn).
     * **conversation** – multi-turn dialogue history; subject to compression.
+    * **intent_state** – optional turn-scoped intent/context hints.
     * **user_input** – the current user message.
 
     When the conversation block exceeds its budget the configured compression
@@ -95,15 +97,13 @@ class ContextManager:
 
         if strategy is not None:
             self._strategy: CompressionStrategy = strategy
-        elif self._config.compression == "truncate":
-            self._strategy = TruncateStrategy()
         else:
-            from mindbot.context.compression import get_strategy
-            self._strategy = get_strategy(
-                self._config.compression,
-                recent_keep=self._config.compression_config.recent_keep,
-                extract_threshold=self._config.compression_config.extract_threshold,
-            )
+            if self._config.compression != "truncate":
+                logger.warning(
+                    f"Unsupported compression strategy {self._config.compression!r} "
+                    "on unified main path; falling back to truncate"
+                )
+            self._strategy = TruncateStrategy()
 
         self._checkpoints: dict[str, Checkpoint] = {}
 
@@ -163,10 +163,9 @@ class ContextManager:
 
     def set_system_identity(self, content: str) -> None:
         """Set (replace) the system identity message."""
-        block = self._blocks["system_identity"]
         msg = Message(role="system", content=content)
         msg.token_count = estimate_tokens(msg.text)
-        block.messages = [msg]
+        self._set_single_message_block("system_identity", msg)
 
     # ------------------------------------------------------------------
     # Memory block (populated externally each turn)
@@ -209,13 +208,34 @@ class ContextManager:
         self._check_and_compact()
 
     # ------------------------------------------------------------------
+    # Intent block (current turn only)
+    # ------------------------------------------------------------------
+
+    def set_intent_state(self, content: str | Message | None) -> None:
+        """Set an optional intent-state hint for the current turn."""
+        if content is None:
+            self.clear_intent_state()
+            return
+
+        if isinstance(content, Message):
+            msg = content
+        else:
+            msg = Message(role="system", content=content)
+            msg.token_count = estimate_tokens(msg.text)
+        self._ensure_token_count(msg)
+        self._set_single_message_block("intent_state", msg)
+
+    def clear_intent_state(self) -> None:
+        self._blocks["intent_state"].messages.clear()
+
+    # ------------------------------------------------------------------
     # User input block (current turn only)
     # ------------------------------------------------------------------
 
     def set_user_input(self, message: Message) -> None:
         """Set the current-turn user input (single message)."""
         self._ensure_token_count(message)
-        self._blocks["user_input"].messages = [message]
+        self._set_single_message_block("user_input", message)
 
     def clear_user_input(self) -> None:
         self._blocks["user_input"].messages.clear()
@@ -290,19 +310,18 @@ class ContextManager:
     # ------------------------------------------------------------------
 
     def prepare_for_llm(self) -> list[Message]:
-        """Prepare message list for LLM call with proactive compression.
+        """Utility: compress and return messages in canonical order.
 
-        This method should be called before sending messages to the LLM.
-        It proactively checks and compresses the context to avoid
-        exceeding token limits.
+        .. note::
+
+            The main chain uses :class:`~mindbot.agent.input_builder.InputBuilder`
+            to assemble the final prompt.  This method is kept as a convenience
+            for backward-compatible callers and tests.
 
         Returns:
-            List of messages ready for LLM consumption
+            List of messages ready for LLM consumption.
         """
-        # Proactively check and compress if needed
         self._check_and_compact()
-
-        # Return messages in assembly order
         return self.messages
 
     # ------------------------------------------------------------------
@@ -357,3 +376,23 @@ class ContextManager:
     def _ensure_token_count(msg: Message) -> None:
         if msg.token_count == 0:
             msg.token_count = estimate_tokens(msg.text)
+
+    def _set_single_message_block(self, block_name: str, message: Message) -> None:
+        block = self._blocks[block_name]
+        if message.token_count > block.max_tokens:
+            truncated = Message(role=message.role, content=message.content)
+            truncated.tool_calls = message.tool_calls
+            truncated.reasoning_content = message.reasoning_content
+            truncated.tool_call_id = message.tool_call_id
+            text = message.text
+            while text:
+                text = text[:-1]
+                truncated.content = text
+                truncated.token_count = estimate_tokens(truncated.text)
+                if truncated.token_count <= block.max_tokens:
+                    block.messages = [truncated]
+                    return
+            block.messages = []
+            return
+
+        block.messages = [message]

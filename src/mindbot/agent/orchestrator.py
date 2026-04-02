@@ -1,14 +1,16 @@
-"""Agent orchestrator - unified entry point for agent execution.
+"""Legacy agent orchestrator – frozen compatibility shell.
 
-This module provides the orchestrator that coordinates:
-- LLM calls with streaming support
-- Tool execution with approval workflow
-- User input requests
-- Interrupt handling
-- Decision making (continue/tools/user_input/complete)
+.. deprecated::
+    The unified main path now lives in ``Agent._run_turn()`` →
+    ``InputBuilder.build()`` → ``TurnEngine.run()`` →
+    ``PersistenceWriter.commit_turn()``.
 
-The orchestrator enables the agent to autonomously decide how to respond
-based on the LLM's output.
+This module is preserved **only** so that existing import paths
+(``from mindbot.agent.orchestrator import AgentOrchestrator``) do not
+break.  No new code should depend on this class.
+
+The approval / user-input / interrupt machinery below is intentionally
+inert on the active main path.
 """
 
 from __future__ import annotations
@@ -17,53 +19,39 @@ import asyncio
 from collections.abc import Callable
 from typing import Any
 
-from mindbot.agent.approval import ApprovalManager
-from mindbot.config.schema import ToolApprovalConfig
-from mindbot.agent.input import InputManager
-from mindbot.agent.interrupt import AgentExecution, InterruptException
-from mindbot.agent.models import (
+from src.mindbot.agent.approval import ApprovalManager
+from src.mindbot.config.schema import ToolApprovalConfig
+from src.mindbot.agent.input import InputManager
+from src.mindbot.agent.interrupt import AgentExecution, InterruptException
+from src.mindbot.agent.models import (
     AgentDecision,
     AgentEvent,
     AgentResponse,
     StopReason,
 )
-from mindbot.agent.streaming import StreamingExecutor
-from mindbot.context.models import ChatResponse, Message, ToolCall
-from mindbot.providers.adapter import ProviderAdapter
-from mindbot.capability.backends.tooling.models import Tool
-from mindbot.utils import get_logger
+from src.mindbot.agent.streaming import StreamingExecutor
+from src.mindbot.context.models import ChatResponse, Message, ToolCall
+from src.mindbot.providers.adapter import ProviderAdapter
+from src.mindbot.capability.backends.tooling.models import Tool
+from src.mindbot.utils import get_logger
 
 # TYPE_CHECKING import keeps the capability layer an optional dependency during
 # Phase 1; the orchestrator still defaults to the existing ToolRegistry path.
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
-    from mindbot.capability.facade import CapabilityFacade
+    from src.mindbot.capability.models import CapabilityQuery
+    from src.mindbot.capability.facade import CapabilityFacade
 
 logger = get_logger("agent.orchestrator")
 
 
 class AgentOrchestrator:
-    """Unified orchestrator for agent execution with autonomous decision making.
+    """Frozen legacy orchestrator – kept for import compatibility only.
 
-    The orchestrator:
-    1. Executes the LLM in a streaming manner
-    2. Detects the LLM's decision (tools/user_input/complete)
-    3. Coordinates tool approvals and execution
-    4. Handles user input requests
-    5. Supports user interrupts
-
-    Usage:
-        orchestrator = AgentOrchestrator(
-            llm=llm_adapter,
-            tools=tool_list,
-            approval_config=approval_config,
-        )
-
-        response = await orchestrator.chat(
-            message="What's the weather like?",
-            session_id="user123",
-            on_event=lambda e: print(f"Event: {e.type}"),
-        )
+    .. deprecated::
+        Use :class:`~mindbot.agent.turn_engine.TurnEngine` via
+        ``Agent._run_turn()`` instead.  This class will be removed in a
+        future release.
     """
 
     def __init__(
@@ -89,7 +77,6 @@ class AgentOrchestrator:
         self._llm = llm
         self._tools = tools or []
         self._max_iterations = max_iterations
-        # Phase 1: store for future use; not yet wired into the hot path.
         self._capability_facade = capability_facade
 
         # Initialize components
@@ -270,7 +257,7 @@ class AgentOrchestrator:
         Returns:
             List of tool results
         """
-        from mindbot.context.models import ToolResult
+        from src.mindbot.context.models import ToolResult
 
         results: list[ToolResult] = []
 
@@ -326,14 +313,33 @@ class AgentOrchestrator:
 
             # Execute tool
             try:
-                # Import here to avoid circular dependency
-                from mindbot.capability.backends.tooling.executor import ToolExecutor
-                from mindbot.capability.backends.tooling.registry import ToolRegistry
+                if self._capability_facade is not None:
+                    from src.mindbot.capability.models import CapabilityQuery
 
-                registry = ToolRegistry.from_tools(self._tools)
-                executor = ToolExecutor(registry)
+                    content = await self._capability_facade.resolve_and_execute(
+                        CapabilityQuery(name=tool_call.name),
+                        arguments=tool_call.arguments,
+                        context={
+                            "tool_call_id": tool_call.id,
+                            "turn_id": turn_id,
+                        },
+                    )
+                    tool_results = [
+                        ToolResult(
+                            tool_call_id=tool_call.id,
+                            success=True,
+                            content=content,
+                        )
+                    ]
+                else:
+                    # Import here to avoid circular dependency
+                    from src.mindbot.capability.backends.tooling.executor import ToolExecutor
+                    from src.mindbot.capability.backends.tooling.registry import ToolRegistry
 
-                tool_results = await executor.execute_batch([tool_call])
+                    registry = ToolRegistry.from_tools(self._tools)
+                    executor = ToolExecutor(registry)
+                    tool_results = await executor.execute_batch([tool_call])
+
                 results.extend(tool_results)
 
                 if on_event and tool_results:
@@ -398,7 +404,7 @@ class AgentOrchestrator:
             request_id: The request ID from the TOOL_CALL_REQUEST event
             decision: The user's decision
         """
-        from mindbot.agent.models import ApprovalDecision
+        from src.mindbot.agent.models import ApprovalDecision
 
         self._approval_manager.resolve(
             request_id,
@@ -426,3 +432,31 @@ class AgentOrchestrator:
             tool_name: Name of the tool
         """
         self._approval_manager.remove_from_whitelist(tool_name)
+
+    def reload_tools(self, tools: list[Tool] | None = None) -> int:
+        """Replace or refresh the bound tool list."""
+        if tools is not None:
+            self._tools = tools
+        if self._tools:
+            self._llm_with_tools = self._llm.bind_tools(self._tools)
+        else:
+            self._llm_with_tools = self._llm
+        return len(self._tools)
+
+    def add_tool(self, tool: Tool) -> None:
+        """Add or replace a single tool and rebind the LLM."""
+        remaining = [existing for existing in self._tools if existing.name != tool.name]
+        remaining.append(tool)
+        self.reload_tools(remaining)
+
+    def remove_tool(self, tool_name: str) -> bool:
+        """Remove a tool by name and rebind the LLM."""
+        remaining = [tool for tool in self._tools if tool.name != tool_name]
+        changed = len(remaining) != len(self._tools)
+        if changed:
+            self.reload_tools(remaining)
+        return changed
+
+    def list_tools(self) -> list[str]:
+        """Return currently bound tool names."""
+        return [tool.name for tool in self._tools]

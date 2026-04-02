@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from mindbot.context.models import Message
-from mindbot.utils import get_logger, run_sync
+from src.mindbot.context.models import Message
+from src.mindbot.utils import get_logger, run_sync
 
 if TYPE_CHECKING:
-    from mindbot.providers.adapter import ProviderAdapter
+    from src.mindbot.providers.adapter import ProviderAdapter
 
 logger = get_logger("context.extraction")
 

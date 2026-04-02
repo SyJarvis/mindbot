@@ -1,7 +1,7 @@
 """Tests for ``mindbot generate-config`` (template-driven workspace init).
 
 Covers:
-- First-run creates settings.yaml and SYSTEM.md from templates
+- First-run creates settings.json and SYSTEM.md from templates
 - Created files contain expected content
 - Workspace sub-directories are created
 - Overwrite prompt respected (simulated)
@@ -19,9 +19,9 @@ from mindbot.cli import _read_template
 
 
 def test_read_template_settings():
-    text = _read_template("settings.example.yaml")
-    assert "agent:" in text
-    assert "providers:" in text
+    text = _read_template("settings.example.json")
+    assert "agent" in text
+    assert "providers" in text
 
 
 def test_read_template_system():
@@ -44,14 +44,15 @@ def test_generate_config_creates_files(tmp_path, monkeypatch):
     assert result.exit_code == 0
 
     root = fake_home / ".mindbot"
-    assert (root / "settings.yaml").exists()
+    assert (root / "settings.json").exists()
     assert (root / "SYSTEM.md").exists()
     assert (root / "skills").is_dir()
     assert (root / "memory").is_dir()
     assert (root / "history").is_dir()
+    assert (root / "cron").is_dir()
 
-    settings_content = (root / "settings.yaml").read_text(encoding="utf-8")
-    assert "agent:" in settings_content
+    settings_content = (root / "settings.json").read_text(encoding="utf-8")
+    assert "agent" in settings_content
 
     system_content = (root / "SYSTEM.md").read_text(encoding="utf-8")
     assert len(system_content) > 0
@@ -65,7 +66,7 @@ def test_generate_config_overwrite_declined(tmp_path, monkeypatch):
 
     root = fake_home / ".mindbot"
     root.mkdir(parents=True)
-    settings = root / "settings.yaml"
+    settings = root / "settings.json"
     settings.write_text("original", encoding="utf-8")
 
     from typer.testing import CliRunner
@@ -85,7 +86,7 @@ def test_generate_config_overwrite_accepted(tmp_path, monkeypatch):
 
     root = fake_home / ".mindbot"
     root.mkdir(parents=True)
-    (root / "settings.yaml").write_text("old", encoding="utf-8")
+    (root / "settings.json").write_text("old", encoding="utf-8")
     (root / "SYSTEM.md").write_text("old", encoding="utf-8")
 
     from typer.testing import CliRunner
@@ -95,5 +96,5 @@ def test_generate_config_overwrite_accepted(tmp_path, monkeypatch):
     result = runner.invoke(app, ["generate-config"], input="y\n")
 
     assert result.exit_code == 0
-    assert (root / "settings.yaml").read_text(encoding="utf-8") != "old"
+    assert (root / "settings.json").read_text(encoding="utf-8") != "old"
     assert (root / "SYSTEM.md").read_text(encoding="utf-8") != "old"

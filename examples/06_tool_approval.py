@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
-"""Example 06: 人工审批（Human-in-the-loop Tool Approval）。
+"""Example 06: 工具直接执行与事件监听。
 
 演示：
-- 配置需要审批的工具
-- 在 on_event 回调中捕获 TOOL_CALL_REQUEST 事件
-- 用户在终端输入 allow / deny 来决定是否执行工具
+- 注册多个工具，让 LLM 自行决定调用哪个
+- 通过 on_event 回调观察 TurnEngine 的执行流程
+- 展示 AgentResponse.message_trace 中的完整调用记录
+
+.. note::
+
+    自统一主链重构后，工具调用由 TurnEngine 直接执行，
+    不再需要人工审批流程。
 
 Run::
 
@@ -15,19 +20,14 @@ from __future__ import annotations
 
 import asyncio
 
-from mindbot.agent.models import AgentEvent, ApprovalDecision, EventType
+from mindbot.agent.models import AgentEvent, EventType
 
 
 def make_config():
-    from mindbot.config.schema import AgentConfig, Config, ProviderConfig, ToolApprovalConfig, ToolAskMode
+    from mindbot.config.schema import AgentConfig, Config, ProviderConfig
 
-    approval = ToolApprovalConfig(
-        ask=ToolAskMode.ALWAYS,  # 每次都要求审批
-        whitelist={},
-        timeout=60,
-    )
     return Config(
-        agent=AgentConfig(model="ollama/qwen3-vl:8b", max_tool_iterations=5, approval=approval),
+        agent=AgentConfig(model="ollama/qwen3-vl:8b", max_tool_iterations=5),
         providers={"ollama": ProviderConfig(base_url="http://localhost:11434", api_key="")},
     )
 
@@ -35,11 +35,6 @@ def make_config():
 async def main() -> None:
     from mindbot.capability.backends.tooling import tool
     from mindbot import MindBot
-
-    @tool(description="删除指定文件（危险操作，需要用户确认）。")
-    def delete_file(path: str) -> str:
-        """Simulate deleting a file. In production this would be os.remove(path)."""
-        return f"[模拟] 文件 {path!r} 已删除。"
 
     @tool(description="列出目录内容（安全操作）。")
     def list_dir(directory: str = ".") -> str:
@@ -51,45 +46,48 @@ async def main() -> None:
         except Exception as exc:
             return f"Error: {exc}"
 
-    bot = MindBot(config=make_config())
-    pending_approvals: dict[str, str] = {}  # request_id → tool_name
+    @tool(description="获取当前 UTC 时间。")
+    def get_time() -> str:
+        """Return the current UTC time as an ISO-8601 string."""
+        from datetime import datetime, timezone
+        return datetime.now(timezone.utc).isoformat()
+
+    events_log: list[str] = []
 
     def on_event(event: AgentEvent) -> None:
-        if event.type == EventType.TOOL_CALL_REQUEST:
-            rid = event.data["request_id"]
-            tool_name = event.data["tool_name"]
-            args = event.data["arguments"]
-            pending_approvals[rid] = tool_name
-            print(f"\n⚠️  工具调用请求: {tool_name}({args})")
-        elif event.type == EventType.TOOL_EXECUTING:
-            print(f"  ▶ 执行工具: {event.data['tool_name']}")
-        elif event.type == EventType.TOOL_RESULT:
-            print(f"  ✅ 工具结果: {event.data.get('result', '')!r}")
+        match event.type:
+            case EventType.THINKING:
+                events_log.append(f"thinking (turn={event.data.get('turn', 0)})")
+            case EventType.TOOL_EXECUTING:
+                events_log.append(f"executing -> {event.data['tool_name']}")
+            case EventType.TOOL_RESULT:
+                preview = str(event.data.get("result", ""))[:60]
+                events_log.append(f"result <- {event.data['tool_name']}: {preview}")
+            case EventType.COMPLETE:
+                events_log.append(f"complete ({event.data['stop_reason']})")
+            case _:
+                events_log.append(f"{event.type.value}")
 
-    message = "先列出当前目录，然后删除 /tmp/test.txt。"
+    bot = MindBot(config=make_config())
+    message = "先列出当前目录，然后告诉我现在几点了。"
+
     print(f"User: {message}")
     print("-" * 60)
-    print("(提示：遇到审批请求时，输入 allow 或 deny)\n")
 
-    # 在后台跑 chat，并在前台等待审批输入
-    async def run_chat():
-        return await bot.chat(message, tools=[delete_file, list_dir], on_event=on_event)
+    response = await bot.chat(message, tools=[list_dir, get_time], on_event=on_event)
 
-    chat_task = asyncio.create_task(run_chat())
-
-    # 给 bot 一点时间启动并发出审批请求
-    while not chat_task.done():
-        await asyncio.sleep(0.1)
-        if pending_approvals:
-            rid, tool_name = next(iter(pending_approvals.items()))
-            decision_str = input(f"  → 是否允许执行 {tool_name}? [allow/deny]: ").strip().lower()
-            decision = ApprovalDecision.ALLOW_ONCE if decision_str == "allow" else ApprovalDecision.DENY
-            bot._agent.resolve_approval(rid, decision.value)
-            del pending_approvals[rid]
-
-    response = await chat_task
-    print("-" * 60)
     print(f"Assistant: {response.content}")
+    print("-" * 60)
+
+    print("\nEvent log:")
+    for entry in events_log:
+        print(f"  {entry}")
+
+    print(f"\nMessage trace ({len(response.message_trace)} messages):")
+    for msg in response.message_trace:
+        role = msg.role
+        preview = str(msg.content)[:60] if msg.content else "(tool_calls)"
+        print(f"  [{role}] {preview}")
 
 
 if __name__ == "__main__":

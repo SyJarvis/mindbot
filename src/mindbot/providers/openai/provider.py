@@ -7,9 +7,9 @@ import json
 from collections.abc import AsyncIterator
 from typing import Any, Self
 
-from mindbot.providers.base import Provider
-from mindbot.providers.openai.param import OpenAIProviderParam
-from mindbot.context.models import (
+from src.mindbot.providers.base import Provider
+from src.mindbot.providers.openai.param import OpenAIProviderParam
+from src.mindbot.context.models import (
     ProviderInfo,
     ChatResponse,
     FinishReason,
@@ -19,7 +19,7 @@ from mindbot.context.models import (
     ToolCall,
     UsageInfo,
 )
-from mindbot.utils import get_logger
+from src.mindbot.utils import get_logger
 
 logger = get_logger("providers.openai")
 
@@ -32,7 +32,7 @@ class OpenAIProvider(Provider):
 
     def __init__(self, param: OpenAIProviderParam) -> None:
         try:
-            import openai  # noqa: F811
+            import src.mindbot.providers.openai as openai  # noqa: F811
         except ImportError as exc:
             raise ImportError("Install the 'openai' package: pip install openai") from exc
 
@@ -202,8 +202,8 @@ class OpenAIProvider(Provider):
         model: str | None = None,
         **kwargs: Any,
     ) -> AsyncIterator[str]:
-        # When tools are bound, fall back to non-streaming to capture tool calls.
-        if self._bound_tools:
+        # When tools are bound (even empty list), fall back to non-streaming to capture tool calls.
+        if self._bound_tools is not None:
             resp = await self.chat(messages, model=model, **kwargs)
             if resp.content:
                 yield resp.content

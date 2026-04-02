@@ -5,7 +5,7 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass, field
 
-from mindbot.context.models import Message
+from src.mindbot.context.models import Message
 
 
 @dataclass

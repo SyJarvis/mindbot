@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from mindbot.providers.param import BaseProviderParam
+from src.mindbot.providers.param import BaseProviderParam
 
 
 @dataclass
@@ -17,5 +17,5 @@ class OpenAIProviderParam(BaseProviderParam):
     base_url: str | None = None
     temperature: float = 0.7
     max_tokens: int | None = None
-    vision_enabled: bool = True
+    vision_enabled: bool = False
     extra: dict[str, Any] = field(default_factory=dict)

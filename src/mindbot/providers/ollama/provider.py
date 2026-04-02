@@ -9,10 +9,10 @@ from typing import Any, Self, AsyncIterator as _AI, Optional
 import asyncio
 import subprocess
 
-from mindbot.config.vision import VISION_PATTERNS
-from mindbot.providers.base import Provider
-from mindbot.providers.ollama.param import OllamaProviderParam
-from mindbot.context.models import (
+from src.mindbot.config.vision import VISION_PATTERNS
+from src.mindbot.providers.base import Provider
+from src.mindbot.providers.ollama.param import OllamaProviderParam
+from src.mindbot.context.models import (
     ProviderInfo,
     ChatResponse,
     FinishReason,
@@ -22,7 +22,7 @@ from mindbot.context.models import (
     ToolCall,
     UsageInfo,
 )
-from mindbot.utils import get_logger
+from src.mindbot.utils import get_logger
 
 logger = get_logger("providers.ollama")
 
@@ -185,7 +185,7 @@ class OllamaProvider(Provider):
         model: str | None = None,
         **kwargs: Any,
     ) -> AsyncIterator[str]:
-        if self._bound_tools:
+        if self._bound_tools is not None:
             resp = await self.chat(messages, model=model, **kwargs)
             if resp.content:
                 yield resp.content

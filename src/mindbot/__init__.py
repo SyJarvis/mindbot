@@ -8,10 +8,10 @@ __logo__ = """
 ╚════════════════════════════════════╝
 """
 
-from mindbot.bot import MindBot
-from mindbot.config.schema import Config
-from mindbot.bus import MessageBus, InboundMessage, OutboundMessage
-from mindbot.channels import BaseChannel, ChannelManager
+from src.mindbot.bot import MindBot
+from src.mindbot.config.schema import Config
+from src.mindbot.bus import MessageBus, InboundMessage, OutboundMessage
+from src.mindbot.channels import BaseChannel, ChannelManager
 
 __all__ = [
     "MindBot",

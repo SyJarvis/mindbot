@@ -28,12 +28,23 @@ The builder ensures:
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from mindbot.agent.agent import Agent
-    from mindbot.capability.facade import CapabilityFacade
-    from mindbot.config.schema import Config
+    from src.mindbot.agent.agent import Agent
+    from src.mindbot.capability.backends.tool_backend import ToolBackend
+    from src.mindbot.capability.facade import CapabilityFacade
+    from src.mindbot.config.schema import Config
+
+
+def _merge_tools(*tool_groups: list[Any]) -> list[Any]:
+    merged: dict[str, Any] = {}
+    for group in tool_groups:
+        for tool in group:
+            tool_name = getattr(tool, "name", type(tool).__name__)
+            merged[tool_name] = tool
+    return list(merged.values())
 
 
 def create_agent(
@@ -42,6 +53,8 @@ def create_agent(
     llm: Any | None = None,
     name: str = "main",
     tools: list[Any] | None = None,
+    include_builtin_tools: bool = True,
+    enable_dynamic_tools: bool = True,
     system_prompt: str | None = None,
     with_memory: bool = True,
     capability_facade: "CapabilityFacade | None" = None,
@@ -58,6 +71,10 @@ def create_agent(
             automatically.
         name: Agent name (used for logging and multi-agent identification).
         tools: Optional initial tool list.
+        include_builtin_tools: When ``True`` (default), attach the default
+            built-in tool set before any caller-provided tools.
+        enable_dynamic_tools: When ``True`` (default), load persisted dynamic
+            tools and register the ``create_tool`` meta-tool.
         system_prompt: Override the agent's system prompt.  When ``None``,
             ``config.agent.system_prompt`` is used.
         with_memory: If ``False``, memory integration is skipped (useful for
@@ -68,15 +85,15 @@ def create_agent(
     Returns:
         A fully initialised :class:`~mindbot.agent.agent.Agent`.
     """
-    from mindbot.agent.agent import Agent
+    from src.mindbot.agent.agent import Agent
 
     if llm is None:
-        from mindbot.builders.llm_builder import create_llm
+        from src.mindbot.builders.llm_builder import create_llm
         llm = create_llm(config)
 
     memory = None
     if with_memory:
-        from mindbot.memory.manager import MemoryManager
+        from src.mindbot.memory.manager import MemoryManager
         memory = MemoryManager(
             storage_path=config.memory.storage_path,
             markdown_path=config.memory.markdown_path,
@@ -84,16 +101,66 @@ def create_agent(
             enable_fts=config.memory.enable_fts,
         )
 
+    builtin_tools: list[Any] = []
+    if include_builtin_tools:
+        from src.mindbot.tools import create_builtin_tools
+
+        builtin_tools = create_builtin_tools(Path.cwd())
+
+    merged_tools = _merge_tools(builtin_tools, tools or [])
+
+    tool_backend: "ToolBackend | None" = None
+    dynamic_manager = None
+    effective_facade = capability_facade
+
+    if effective_facade is None:
+        from src.mindbot.capability.backends.tool_backend import ToolBackend
+        from src.mindbot.capability.backends.tooling.registry import ToolRegistry
+        from src.mindbot.capability.facade import CapabilityFacade
+
+        tool_backend = ToolBackend(
+            static_registry=ToolRegistry.from_tools(merged_tools),
+            auto_load=enable_dynamic_tools,
+        )
+        effective_facade = CapabilityFacade()
+        effective_facade.add_backend(tool_backend)
+
+    if enable_dynamic_tools and effective_facade is not None:
+        from src.mindbot.capability.backends.tooling.meta_tool import create_tool_creation_tool
+        from src.mindbot.generation.dynamic_manager import DynamicToolManager
+
+        if tool_backend is None:
+            from src.mindbot.capability.backends.tool_backend import ToolBackend
+            from src.mindbot.capability.backends.tooling.registry import ToolRegistry
+
+            tool_backend = ToolBackend(
+                static_registry=ToolRegistry.from_tools(merged_tools),
+                auto_load=True,
+            )
+            effective_facade.add_backend(tool_backend, replace=True)
+
+        dynamic_manager = DynamicToolManager(
+            llm=llm,
+            capability_facade=effective_facade,
+            tool_backend=tool_backend,
+        )
+        create_tool_meta = create_tool_creation_tool(dynamic_manager)
+        tool_backend.register_static(create_tool_meta, replace=True)
+        merged_tools = _merge_tools(merged_tools, [create_tool_meta])
+        effective_facade.refresh_registry()
+
     return Agent(
         name=name,
         llm=llm,
-        tools=tools or [],
+        tools=merged_tools,
         system_prompt=system_prompt if system_prompt is not None else config.agent.system_prompt,
-        approval_config=config.agent.approval,
         context_config=config.context,
         memory=memory,
         memory_top_k=config.agent.memory_top_k,
+        tool_persistence=config.agent.tool_persistence.value,
         max_iterations=config.agent.max_tool_iterations,
         max_sessions=config.agent.max_sessions,
-        capability_facade=capability_facade,
+        capability_facade=effective_facade,
+        tool_backend=tool_backend,
+        dynamic_manager=dynamic_manager,
     )

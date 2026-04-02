@@ -5,8 +5,8 @@ from typing import Any
 
 from loguru import logger
 
-from mindbot.bus.events import InboundMessage, OutboundMessage
-from mindbot.bus.queue import MessageBus
+from src.mindbot.bus.events import InboundMessage, OutboundMessage
+from src.mindbot.bus.queue import MessageBus
 
 
 class BaseChannel(ABC):

@@ -6,8 +6,8 @@ import json
 from pathlib import Path
 from typing import Sequence
 
-from mindbot.session.types import SessionMessage
-from mindbot.utils import get_logger
+from src.mindbot.session.types import SessionMessage
+from src.mindbot.utils import get_logger
 
 logger = get_logger("session.store")
 

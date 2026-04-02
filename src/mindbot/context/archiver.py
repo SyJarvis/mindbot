@@ -5,11 +5,11 @@ from __future__ import annotations
 import uuid
 from typing import TYPE_CHECKING
 
-from mindbot.context.models import Message
-from mindbot.utils import get_logger
+from src.mindbot.context.models import Message
+from src.mindbot.utils import get_logger
 
 if TYPE_CHECKING:
-    from mindbot.memory.manager import MemoryManager
+    from src.mindbot.memory.manager import MemoryManager
 
 logger = get_logger("context.archiver")
 

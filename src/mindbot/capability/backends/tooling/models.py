@@ -44,6 +44,7 @@ class Tool:
     name: str
     description: str
     parameters: list[ToolParameter] = field(default_factory=list)
+    parameters_schema_override: dict[str, Any] | None = None
     handler: Callable[..., Any] | None = None
 
     # ------------------------------------------------------------------
@@ -52,6 +53,9 @@ class Tool:
 
     def parameters_json_schema(self) -> dict[str, Any]:
         """Build a JSON Schema ``object`` for the tool's parameters."""
+        if self.parameters_schema_override is not None:
+            return self.parameters_schema_override
+
         properties: dict[str, Any] = {}
         required: list[str] = []
         for p in self.parameters:

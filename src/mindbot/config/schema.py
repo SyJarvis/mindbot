@@ -6,7 +6,7 @@ import re
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -65,37 +65,36 @@ class EndpointConfig(BaseModel):
     weight: int = Field(default=1, ge=0, description="Load balancing weight (higher = more requests)")
 
 
-class ProviderConfig(BaseModel):
-    """Any OpenAI-compatible LLM provider.
+# Well-known provider driver types (used for validation)
+KNOWN_PROVIDER_TYPES = {"openai", "ollama", "transformers"}
+
+
+class ProviderInstanceConfig(BaseModel):
+    """A named provider instance with an explicit backend driver type.
+
+    The key in ``Config.providers`` is the **user-chosen instance name**
+    (e.g. ``"local-ollama"``, ``"moonshot"``, ``"gpt-backup"``).
+    The ``type`` field selects the backend driver (e.g. ``"openai"``,
+    ``"ollama"``, ``"transformers"``).
+
+    This design allows multiple independent connections that share the same
+    driver type — for example two OpenAI-compatible providers with different
+    API keys, or three Ollama instances on different machines.
 
     Supports two configuration modes:
 
-    1. **Legacy mode** (backward compatible): Use ``base_url`` and ``api_key`` directly.
-       These are automatically converted to a single endpoint.
+    1. **Legacy mode** (backward compatible): Use ``base_url`` and ``api_key``
+       directly. These are automatically converted to a single endpoint.
 
     2. **Multi-endpoint mode**: Use ``endpoints`` list to configure multiple
        API endpoints for load balancing and failover.
-
-    Example (multi-endpoint)::
-
-        providers:
-          openai:
-            strategy: "round-robin"  # round-robin | random | priority
-            endpoints:
-              - base_url: "https://api.openai.com/v1"
-                api_key: "sk-key1"
-                weight: 2
-                models:
-                  - id: "gpt-4"
-                    level: "high"
-              - base_url: "https://api.backup.com/v1"
-                api_key: "sk-key2"
-                weight: 1
-                models:
-                  - id: "gpt-4"
-                    level: "high"
     """
 
+    type: str = Field(
+        default="",
+        description="Backend driver type: 'openai', 'ollama', or 'transformers'. "
+        "When empty, auto-detected from the provider instance key name during Config validation.",
+    )
     strategy: Literal["round-robin", "random", "priority"] = "round-robin"
     endpoints: list[EndpointConfig] = Field(default_factory=list)
 
@@ -110,14 +109,12 @@ class ProviderConfig(BaseModel):
     @classmethod
     def normalize_endpoints(cls, v: Any, info) -> list[EndpointConfig]:
         """Normalize endpoints and handle legacy configuration."""
-        # If endpoints are already provided as list, validate them
         if isinstance(v, list) and len(v) > 0:
             if isinstance(v[0], EndpointConfig):
                 return v
             elif isinstance(v[0], dict):
                 return [EndpointConfig(**item) for item in v]
 
-        # Legacy mode: create endpoint from base_url/api_key
         values = info.data
         base_url = values.get("base_url")
         if base_url:
@@ -146,7 +143,6 @@ class ProviderConfig(BaseModel):
         """Return the effective list of endpoints for this provider."""
         if self.endpoints:
             return self.endpoints
-        # Fallback for legacy config (shouldn't happen due to validator)
         return [
             EndpointConfig(
                 base_url=self.base_url or "",
@@ -158,18 +154,19 @@ class ProviderConfig(BaseModel):
         ]
 
     def get_all_models(self) -> list[tuple[str, str, ModelConfig | str]]:
-        """Return all (endpoint_index, provider, model) tuples from all endpoints.
-
-        This is used by the routing system to discover available models.
-        """
+        """Return all (endpoint_index, model_id, ModelConfig) tuples."""
         result = []
         for idx, endpoint in enumerate(self.get_effective_endpoints()):
             for model in endpoint.models:
                 if isinstance(model, str):
                     result.append((str(idx), model, ModelConfig(id=model, role="chat", level="medium")))
-                else:  # ModelConfig
+                else:
                     result.append((str(idx), model.id, model))
         return result
+
+
+# Backward compatibility alias
+ProviderConfig = ProviderInstanceConfig
 
 
 class RoutingRule(BaseModel):
@@ -204,14 +201,12 @@ class ToolApprovalConfig(BaseModel):
     """
 
     security: ToolSecurityLevel = ToolSecurityLevel.ALLOWLIST
-    ask: ToolAskMode = ToolAskMode.ON_MISS
-    timeout: int = Field(default=300, ge=1, le=3600)  # 5 minutes default
+    ask: ToolAskMode = ToolAskMode.OFF
+    timeout: int = Field(default=300, ge=1, le=3600)
     whitelist: dict[str, list[str]] = Field(default_factory=dict)
     dangerous_tools: list[str] = Field(
         default_factory=lambda: ["delete_file", "remove_file", "rm", "shell", "execute_command"]
     )
-
-    # Helper methods for compatibility with dataclass-based code
 
     def is_whitelisted(self, tool_name: str, arguments: dict) -> bool:
         """Check if a tool call is whitelisted."""
@@ -273,20 +268,18 @@ class ToolApprovalConfig(BaseModel):
 class ToolModelsConfig(BaseModel):
     """Explicit assignments for non-chat tool models.
 
-    Each field accepts a ``"provider/model"`` reference string, identical in
-    format to ``agent.model``.  When set, this takes precedence over
-    auto-discovery via ``ModelConfig.role``.
+    Each field accepts a ``"instance/model"`` reference string, identical in
+    format to ``agent.model``.
 
     Example::
 
         tool_models:
-          embed: "openai/text-embedding-3-small"
-          ocr: "easyocr/default"    # Phase 1.4
+          embed: "local-ollama/bge-small-en"
     """
 
     embed: str | None = None
-    ocr: str | None = None    # reserved for Phase 1.4
-    rerank: str | None = None  # reserved for future use
+    ocr: str | None = None
+    rerank: str | None = None
 
 
 class ToolPersistenceStrategy(str, Enum):
@@ -299,7 +292,7 @@ class ToolPersistenceStrategy(str, Enum):
 class AgentConfig(BaseModel):
     """Agent behaviour settings."""
 
-    model: str = "ollama/qwen3"
+    model: str = "local-ollama/qwen3.5:2b"
     max_tokens: int = 8192
     temperature: float = Field(default=0.7, ge=0.0, le=2.0)
     max_tool_iterations: int = 20
@@ -343,13 +336,14 @@ class ContextBlocksConfig(BaseModel):
 
     Each value is a hard upper limit in tokens.  When ``None``, the budget
     is computed automatically from ``ContextConfig.max_tokens`` using
-    built-in default ratios (system 15%, memory 20%, conversation 50%,
-    user_input 15%).
+    built-in default ratios (system 15%, memory 20%, conversation 40%,
+    intent_state 10%, user_input 15%).
     """
 
     system_identity: int | None = None
     memory: int | None = None
     conversation: int | None = None
+    intent_state: int | None = None
     user_input: int | None = None
 
 
@@ -426,7 +420,6 @@ class SessionJournalConfig(BaseModel):
 class DebugConfig(BaseModel):
     """Debug / introspection options."""
 
-    # If set, each turn writes the full prompt (context block summary + messages) to this path.
     dump_prompt_path: str | None = None
 
 
@@ -444,6 +437,10 @@ class Config(BaseSettings):
 
     Supports environment variables prefixed with ``MIND_`` and nested
     delimiter ``__``.  Example: ``MIND_AGENT__TEMPERATURE=0.5``.
+
+    Configuration is loaded from JSON/JSONC files. The ``providers`` dict
+    is keyed by **user-chosen instance names** (not provider types), and
+    each entry has a ``type`` field specifying the backend driver.
     """
 
     model_config = SettingsConfigDict(
@@ -453,7 +450,7 @@ class Config(BaseSettings):
     )
 
     agent: AgentConfig = Field(default_factory=AgentConfig)
-    providers: dict[str, ProviderConfig] = Field(default_factory=dict)
+    providers: dict[str, ProviderInstanceConfig] = Field(default_factory=dict)
     memory: MemoryConfig = Field(default_factory=MemoryConfig)
     context: ContextConfig = Field(default_factory=ContextConfig)
     routing: RoutingConfig = Field(default_factory=RoutingConfig)
@@ -463,6 +460,18 @@ class Config(BaseSettings):
     multimodal: MultimodalConfig = Field(default_factory=MultimodalConfig)
     channels: ChannelsConfig = Field(default_factory=ChannelsConfig)
 
+    @model_validator(mode="after")
+    def _auto_fill_provider_type(self) -> Config:
+        """Auto-fill ``type`` for providers that lack it.
+
+        When the provider type is not explicitly set, attempts to infer
+        it from the provider instance name if it matches a known driver.
+        """
+        for name, prov in self.providers.items():
+            if not prov.type and name in KNOWN_PROVIDER_TYPES:
+                object.__setattr__(prov, "type", name)
+        return self
+
     @classmethod
     def from_env(cls) -> Config:
         """Load config from environment variables (MIND_*)."""
@@ -470,6 +479,6 @@ class Config(BaseSettings):
 
     @classmethod
     def from_file(cls, path: str | Path) -> Config:
-        """Load config from a YAML/JSON file. See :func:`mindbot.config.load_config`."""
+        """Load config from a JSON/JSONC file. See :func:`mindbot.config.load_config`."""
         from mindbot.config.loader import load_config
         return load_config(path)

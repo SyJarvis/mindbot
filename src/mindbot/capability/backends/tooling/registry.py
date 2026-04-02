@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Iterable
 
-from mindbot.capability.backends.tooling.models import Tool
+from src.mindbot.capability.backends.tooling.models import Tool
 
 
 class ToolRegistry:

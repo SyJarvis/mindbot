@@ -7,8 +7,8 @@ from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING, Any, Self
 
 if TYPE_CHECKING:
-    from mindbot.context.models import ChatResponse, Message, ProviderInfo
-    from mindbot.capability.backends.tooling.models import Tool
+    from src.mindbot.context.models import ChatResponse, Message, ProviderInfo
+    from src.mindbot.capability.backends.tooling.models import Tool
 
 
 class Provider(ABC):

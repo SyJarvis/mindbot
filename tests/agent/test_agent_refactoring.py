@@ -3,9 +3,7 @@
 Covers:
 - Agent: LRU session eviction (max_sessions)
 - Agent: tool signature invalidation on same-name replacement
-- Agent: approval forwarding per session
 - MindAgent: supervisor with child agent registry
-- MindAgent: approval gateway broadcasts to all agents
 - MultiAgentOrchestrator: sequential and parallel modes
 - Config: max_sessions field present and defaults to 1000
 """
@@ -23,7 +21,7 @@ import pytest
 from mindbot.agent.agent import Agent
 from mindbot.agent.core import MindAgent
 from mindbot.agent.multi_agent import MultiAgentOrchestrator
-from mindbot.config.schema import AgentConfig, Config, ContextConfig, ToolApprovalConfig
+from mindbot.config.schema import AgentConfig, Config, ContextConfig
 from mindbot.context.models import ChatResponse, FinishReason, Message
 
 
@@ -121,19 +119,19 @@ class TestAgentLRUEviction:
         assert "third" in agent._sessions
         assert "fourth" in agent._sessions
 
-    def test_orchestrator_evicted_with_session(self) -> None:
+    def test_turn_engine_evicted_with_session(self) -> None:
         agent, _ = _make_agent()
         agent._max_sessions = 2
         agent._get_session_context("s1")
-        agent._orchestrators["s1"] = MagicMock()
-        agent._orchestrator_tool_signatures["s1"] = frozenset()
+        agent._turn_engines["s1"] = MagicMock()
+        agent._turn_engine_tool_signatures["s1"] = frozenset()
 
         agent._get_session_context("s2")
         agent._get_session_context("s3")  # evicts s1
 
         assert "s1" not in agent._sessions
-        assert "s1" not in agent._orchestrators
-        assert "s1" not in agent._orchestrator_tool_signatures
+        assert "s1" not in agent._turn_engines
+        assert "s1" not in agent._turn_engine_tool_signatures
 
     @pytest.mark.asyncio
     async def test_chat_maintains_lru_order(self) -> None:
@@ -179,70 +177,27 @@ class TestToolSignatureInvalidation:
         assert agent._get_tool_signature([t1]) != agent._get_tool_signature([t2])
 
     @pytest.mark.asyncio
-    async def test_orchestrator_rebuilt_on_tool_replacement(self) -> None:
-        """After register_tool() with same name, the next chat rebuilds orchestrator."""
+    async def test_turn_engine_rebuilt_on_tool_replacement(self) -> None:
+        """After register_tool() with same name, the next chat rebuilds turn engine."""
         agent, llm = _make_agent()
         tool_v1 = FakeTool(name="search")
         agent.register_tool(tool_v1)
 
         await agent.chat("find me", session_id="sess")
-        orch_first = agent._orchestrators.get("sess")
-        sig_first = agent._orchestrator_tool_signatures.get("sess")
+        engine_first = agent._turn_engines.get("sess")
+        sig_first = agent._turn_engine_tool_signatures.get("sess")
 
         # Replace with a new object of the same name
         tool_v2 = FakeTool(name="search")
-        # Simulate replacement in registry: remove old, add new
         agent.tool_registry._tools.clear()  # type: ignore[attr-defined]
         agent.tool_registry.register(tool_v2)
 
         await agent.chat("find me again", session_id="sess")
-        orch_second = agent._orchestrators.get("sess")
-        sig_second = agent._orchestrator_tool_signatures.get("sess")
+        engine_second = agent._turn_engines.get("sess")
+        sig_second = agent._turn_engine_tool_signatures.get("sess")
 
-        assert orch_first is not orch_second, "Orchestrator must be rebuilt on tool replacement"
+        assert engine_first is not engine_second, "TurnEngine must be rebuilt on tool replacement"
         assert sig_first != sig_second
-
-
-# ---------------------------------------------------------------------------
-# Agent: approval forwarding
-# ---------------------------------------------------------------------------
-
-
-class TestAgentApprovalForwarding:
-
-    def test_resolve_approval_delegates_to_orchestrator(self) -> None:
-        agent, _ = _make_agent()
-        mock_orch = MagicMock()
-        agent._orchestrators["s1"] = mock_orch
-
-        agent.resolve_approval("req-1", "allow_once", session_id="s1")
-        mock_orch.resolve_approval.assert_called_once_with("req-1", "allow_once")
-
-    def test_resolve_approval_no_op_for_unknown_session(self) -> None:
-        agent, _ = _make_agent()
-        # Should not raise even if session doesn't exist
-        agent.resolve_approval("req-1", "allow_once", session_id="nonexistent")
-
-    def test_provide_input_delegates_to_orchestrator(self) -> None:
-        agent, _ = _make_agent()
-        mock_orch = MagicMock()
-        agent._orchestrators["s1"] = mock_orch
-
-        agent.provide_input("req-1", "user typed this", session_id="s1")
-        mock_orch.provide_input.assert_called_once_with("req-1", "user typed this")
-
-    def test_add_tool_to_whitelist_updates_config(self) -> None:
-        agent, _ = _make_agent()
-        agent.add_tool_to_whitelist("my_tool", ".*")
-        assert agent.approval_config.is_whitelisted("my_tool", {})
-
-    def test_add_tool_to_whitelist_updates_live_orchestrator(self) -> None:
-        agent, _ = _make_agent()
-        mock_orch = MagicMock()
-        agent._orchestrators["s1"] = mock_orch
-
-        agent.add_tool_to_whitelist("my_tool", ".*", session_id="s1")
-        mock_orch.add_tool_to_whitelist.assert_called_once_with("my_tool", ".*")
 
 
 # ---------------------------------------------------------------------------
@@ -295,35 +250,11 @@ class TestMindAgentSupervisor:
         response = await supervisor.chat("hello", session_id="s1")
         assert response.content == "supervisor reply"
 
-    def test_approval_gateway_forwards_to_main_and_children(self, tmp_path: Any) -> None:
-        supervisor, _ = _make_mindagent(tmp_path)
-
-        # Inject a mock orchestrator for the main agent session
-        mock_main_orch = MagicMock()
-        supervisor._main_agent._orchestrators["s1"] = mock_main_orch
-
-        # Register a child with a mock orchestrator
-        child_llm = FakeLLM()
-        child = Agent(name="child1", llm=child_llm, context_config=ContextConfig(max_tokens=2000))
-        mock_child_orch = MagicMock()
-        child._orchestrators["s1"] = mock_child_orch
-        supervisor.register_child_agent(child)
-
-        supervisor.resolve_approval("req-id", "allow_once", session_id="s1")
-
-        mock_main_orch.resolve_approval.assert_called_once_with("req-id", "allow_once")
-        mock_child_orch.resolve_approval.assert_called_once_with("req-id", "allow_once")
-
     def test_llm_property_returns_main_agent_llm(self, tmp_path: Any) -> None:
         supervisor, fake_llm = _make_mindagent(tmp_path)
         assert supervisor.llm is fake_llm
 
-    def test_approval_config_property(self, tmp_path: Any) -> None:
-        supervisor, _ = _make_mindagent(tmp_path)
-        assert isinstance(supervisor.approval_config, ToolApprovalConfig)
-
-
-# ---------------------------------------------------------------------------
+    # ------------------------------------------------------------------
 # MultiAgentOrchestrator
 # ---------------------------------------------------------------------------
 
