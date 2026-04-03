@@ -21,18 +21,17 @@ from __future__ import annotations
 
 import asyncio
 
+from pathlib import Path
+from mindbot.config.loader import load_config
+
 
 def make_config(tool_persistence: str = "summary"):
-    from mindbot.config.schema import AgentConfig, Config, ProviderConfig
+    """Load the user's config file and override only tool persistence."""
+    from mindbot.config.schema import ToolPersistenceStrategy
 
-    return Config(
-        agent=AgentConfig(
-            model="ollama/qwen3-vl:8b",
-            max_tool_iterations=5,
-            tool_persistence=tool_persistence,
-        ),
-        providers={"ollama": ProviderConfig(base_url="http://localhost:11434", api_key="")},
-    )
+    config = load_config(Path.home() / ".mindbot" / "settings.json")
+    config.agent.tool_persistence = ToolPersistenceStrategy(tool_persistence)
+    return config
 
 
 async def demo_persistence(mode: str) -> None:

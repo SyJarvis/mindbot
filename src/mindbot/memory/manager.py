@@ -5,13 +5,13 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from typing import Any
 
-from src.mindbot.memory.compaction import MemoryCompactor
-from src.mindbot.memory.indexer import MemoryIndexer
-from src.mindbot.memory.markdown import MarkdownStorage
-from src.mindbot.memory.searcher import HybridSearcher
-from src.mindbot.memory.storage import SQLiteStorage
-from src.mindbot.memory.types import MemoryChunk, MemorySource, MemoryType
-from src.mindbot.utils import get_logger
+from mindbot.memory.compaction import MemoryCompactor
+from mindbot.memory.indexer import MemoryIndexer
+from mindbot.memory.markdown import MarkdownStorage
+from mindbot.memory.searcher import HybridSearcher
+from mindbot.memory.storage import SQLiteStorage
+from mindbot.memory.types import MemoryChunk, MemorySource, MemoryType
+from mindbot.utils import get_logger
 
 logger = get_logger("memory.manager")
 

@@ -13,20 +13,20 @@ from __future__ import annotations
 from collections.abc import AsyncIterator, Callable
 from typing import TYPE_CHECKING, Any
 
-from src.mindbot.agent.agent import Agent
-from src.mindbot.agent.models import AgentEvent, AgentResponse, StopReason, TurnResult
-from src.mindbot.builders import create_agent, create_llm
-from src.mindbot.capability.backends.tooling import ToolRegistry
-from src.mindbot.config.schema import Config
-from src.mindbot.context.models import Message
-from src.mindbot.memory import MemoryManager
-from src.mindbot.session import SessionJournal
-from src.mindbot.session.types import SessionMessage
-from src.mindbot.utils import get_logger
+from mindbot.agent.agent import Agent
+from mindbot.agent.models import AgentEvent, AgentResponse, StopReason, TurnResult
+from mindbot.builders import create_agent, create_llm
+from mindbot.capability.backends.tooling import ToolRegistry
+from mindbot.config.schema import Config
+from mindbot.context.models import Message
+from mindbot.memory import MemoryManager
+from mindbot.session import SessionJournal
+from mindbot.session.types import SessionMessage
+from mindbot.utils import get_logger
 
 if TYPE_CHECKING:
-    from src.mindbot.agent.persistence_writer import PersistenceWriter as _PersistenceWriter
-    from src.mindbot.capability.facade import CapabilityFacade
+    from mindbot.agent.persistence_writer import PersistenceWriter as _PersistenceWriter
+    from mindbot.capability.facade import CapabilityFacade
 
 logger = get_logger("agent.core")
 
@@ -230,7 +230,7 @@ class MindAgent:
         """Return a writer that handles journal-only persistence for this session."""
         if self._journal is None:
             return None
-        from src.mindbot.agent.persistence_writer import PersistenceWriter
+        from mindbot.agent.persistence_writer import PersistenceWriter
 
         ctx = self._main_agent._get_session_context(session_id)
         writer = PersistenceWriter(

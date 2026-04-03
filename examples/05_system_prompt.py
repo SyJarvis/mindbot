@@ -13,22 +13,22 @@ Run::
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
+
+from mindbot.config.loader import load_config
 
 
 def make_config(system_prompt: str):
-    from mindbot.config.schema import AgentConfig, Config, ProviderConfig
-
-    return Config(
-        agent=AgentConfig(model="ollama/qwen3-vl:8b", system_prompt=system_prompt),
-        providers={"ollama": ProviderConfig(base_url="http://localhost:11434", api_key="")},
-    )
-
+    """Load the user's config file and override only the system prompt."""
+    config = load_config(Path.home() / ".mindbot" / "settings.json")
+    config.agent.system_prompt = system_prompt
+    return config
 
 async def chat_as(role_name: str, system_prompt: str, message: str) -> None:
-    from mindbot import MindBot
+    from mindbot.agent.core import MindAgent
 
-    bot = MindBot(config=make_config(system_prompt))
-    response = await bot.chat(message)
+    agent = MindAgent(config=make_config(system_prompt))
+    response = await agent.chat(message)
     print(f"\n[{role_name}]\n{response.content}\n")
 
 

@@ -22,7 +22,7 @@ async def main() -> None:
         ContextConfig,
         ProviderConfig,
     )
-    from mindbot import MindBot
+    from mindbot.agent.core import MindAgent
 
     config = Config(
         agent=AgentConfig(
@@ -50,8 +50,9 @@ async def main() -> None:
     print(f"  max_sessions      = {config.agent.max_sessions}")
     print("-" * 60)
 
-    bot = MindBot(config=config)
-    response = await bot.chat("你好，请介绍一下你自己。")
+    # Use MindAgent directly so the in-code system_prompt is not replaced by SYSTEM.md.
+    agent = MindAgent(config=config)
+    response = await agent.chat("你好，请介绍一下你自己。")
     print(f"Assistant: {response.content}")
 
 

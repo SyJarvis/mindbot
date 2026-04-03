@@ -4,12 +4,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from src.mindbot.capability.backends.tool_backend import ToolBackend
-from src.mindbot.capability.facade import CapabilityFacade
-from src.mindbot.generation.events import ToolEvent, ToolEventBus, ToolEventType
-from src.mindbot.generation.models import ImplementationType, ToolDefinition
-from src.mindbot.generation.protocols import GenerationPersistenceError, GenerationRequest
-from src.mindbot.generation.tool_generator import PromptStrategy, ToolGenerator
+from mindbot.capability.backends.tool_backend import ToolBackend
+from mindbot.capability.facade import CapabilityFacade
+from mindbot.generation.events import ToolEvent, ToolEventBus, ToolEventType
+from mindbot.generation.models import ImplementationType, ToolDefinition
+from mindbot.generation.protocols import GenerationPersistenceError, GenerationRequest
+from mindbot.generation.tool_generator import PromptStrategy, ToolGenerator
 
 
 class DynamicToolManager:

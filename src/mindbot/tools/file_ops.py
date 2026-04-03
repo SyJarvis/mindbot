@@ -6,7 +6,7 @@ import fnmatch
 from pathlib import Path
 from typing import Any
 
-from src.mindbot.capability.backends.tooling.models import Tool
+from mindbot.capability.backends.tooling.models import Tool
 
 
 def _resolve_path(path: str, workspace: Path, allowed_dir: Path | None) -> Path:

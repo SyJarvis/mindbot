@@ -331,16 +331,29 @@ class MemoryConfig(BaseModel):
     enable_fts: bool = True
 
 
+class SkillsConfig(BaseModel):
+    """Prompt-layer skill discovery and injection settings."""
+
+    enabled: bool = True
+    skill_dirs: list[str] = Field(default_factory=list)
+    always_include: list[str] = Field(default_factory=list)
+    max_visible: int = Field(default=8, ge=0)
+    max_detail_load: int = Field(default=2, ge=0)
+    trigger_mode: Literal["metadata-match", "explicit-only", "hybrid"] = "metadata-match"
+
+
 class ContextBlocksConfig(BaseModel):
     """Per-block token budgets for the context window.
 
     Each value is a hard upper limit in tokens.  When ``None``, the budget
     is computed automatically from ``ContextConfig.max_tokens`` using
-    built-in default ratios (system 15%, memory 20%, conversation 40%,
-    intent_state 10%, user_input 15%).
+    built-in default ratios (system 12%, skills overview 8%, skills detail 15%,
+    memory 15%, conversation 35%, intent_state 5%, user_input 10%).
     """
 
     system_identity: int | None = None
+    skills_overview: int | None = None
+    skills_detail: int | None = None
     memory: int | None = None
     conversation: int | None = None
     intent_state: int | None = None
@@ -452,6 +465,7 @@ class Config(BaseSettings):
     agent: AgentConfig = Field(default_factory=AgentConfig)
     providers: dict[str, ProviderInstanceConfig] = Field(default_factory=dict)
     memory: MemoryConfig = Field(default_factory=MemoryConfig)
+    skills: SkillsConfig = Field(default_factory=SkillsConfig)
     context: ContextConfig = Field(default_factory=ContextConfig)
     routing: RoutingConfig = Field(default_factory=RoutingConfig)
     session_journal: SessionJournalConfig = Field(default_factory=SessionJournalConfig)

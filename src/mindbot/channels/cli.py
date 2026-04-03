@@ -9,9 +9,9 @@ from typing import Any
 
 from loguru import logger
 
-from src.mindbot.bus.events import OutboundMessage
-from src.mindbot.bus.queue import MessageBus
-from src.mindbot.channels.base import BaseChannel
+from mindbot.bus.events import OutboundMessage
+from mindbot.bus.queue import MessageBus
+from mindbot.channels.base import BaseChannel
 
 
 class CLIChannel(BaseChannel):

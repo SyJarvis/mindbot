@@ -19,9 +19,9 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from src.mindbot.generation.models import ToolDefinition, ToolDefinitionError
-from src.mindbot.generation.protocols import GenerationRequest, GenerationValidationError
-from src.mindbot.utils import get_logger
+from mindbot.generation.models import ToolDefinition, ToolDefinitionError
+from mindbot.generation.protocols import GenerationRequest, GenerationValidationError
+from mindbot.utils import get_logger
 
 logger = get_logger("generation.validator")
 

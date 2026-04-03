@@ -19,17 +19,17 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Literal
 
-from src.mindbot.context.manager import ContextManager
-from src.mindbot.context.models import Message
-from src.mindbot.utils import estimate_tokens, get_logger
+from mindbot.context.manager import ContextManager
+from mindbot.context.models import Message
+from mindbot.utils import estimate_tokens, get_logger
 
 ToolPersistence = Literal["none", "summary", "full"]
 
 if TYPE_CHECKING:
-    from src.mindbot.agent.models import AgentResponse
-    from src.mindbot.memory.manager import MemoryManager
-    from src.mindbot.session.store import SessionJournal
-    from src.mindbot.session.types import SessionMessage
+    from mindbot.agent.models import AgentResponse
+    from mindbot.memory.manager import MemoryManager
+    from mindbot.session.store import SessionJournal
+    from mindbot.session.types import SessionMessage
 
 logger = get_logger("agent.persistence_writer")
 
@@ -161,7 +161,7 @@ class PersistenceWriter:
         if self._journal is None:
             return
 
-        from src.mindbot.session.types import SessionMessage
+        from mindbot.session.types import SessionMessage
 
         entries: list[SessionMessage] = []
 
@@ -192,7 +192,7 @@ class PersistenceWriter:
 
     @staticmethod
     def _msgs_to_journal(msgs: list[Message]) -> list["SessionMessage"]:
-        from src.mindbot.session.types import SessionMessage
+        from mindbot.session.types import SessionMessage
 
         result: list[SessionMessage] = []
         for m in msgs:

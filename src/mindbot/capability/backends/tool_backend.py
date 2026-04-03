@@ -35,22 +35,22 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from src.mindbot.capability.backends.base import ExtensionBackend
-from src.mindbot.capability.backends.tooling.executor import ToolExecutor
-from src.mindbot.capability.backends.tooling.models import Tool
-from src.mindbot.capability.backends.tooling.registry import ToolRegistry
-from src.mindbot.capability.models import (
+from mindbot.capability.backends.base import ExtensionBackend
+from mindbot.capability.backends.tooling.executor import ToolExecutor
+from mindbot.capability.backends.tooling.models import Tool
+from mindbot.capability.backends.tooling.registry import ToolRegistry
+from mindbot.capability.models import (
     Capability,
     CapabilityConflictError,
     CapabilityExecutionError,
     CapabilityNotFoundError,
     CapabilityType,
 )
-from src.mindbot.context.models import ToolCall
-from src.mindbot.generation.executor import DynamicToolExecutor
-from src.mindbot.generation.models import ToolDefinition
-from src.mindbot.generation.registry import ToolDefinitionRegistry
-from src.mindbot.utils import get_logger
+from mindbot.context.models import ToolCall
+from mindbot.generation.executor import DynamicToolExecutor
+from mindbot.generation.models import ToolDefinition
+from mindbot.generation.registry import ToolDefinitionRegistry
+from mindbot.utils import get_logger
 
 logger = get_logger("capability.backends.tool_backend")
 

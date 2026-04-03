@@ -9,13 +9,15 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from src.mindbot.agent.input_builder import InputBuilder
-from src.mindbot.context.manager import ContextManager
-from src.mindbot.context.models import Message, MessageContent
-from src.mindbot.utils import get_logger
+from mindbot.agent.input_builder import InputBuilder
+from mindbot.context.manager import ContextManager
+from mindbot.context.models import Message, MessageContent
+from mindbot.utils import get_logger
 
 if TYPE_CHECKING:
-    from src.mindbot.memory.manager import MemoryManager
+    from mindbot.config.schema import SkillsConfig
+    from mindbot.memory.manager import MemoryManager
+    from mindbot.skills.registry import SkillRegistry
 
 logger = get_logger("agent.scheduler")
 
@@ -41,12 +43,16 @@ class Scheduler:
         *,
         memory_top_k: int = 5,
         system_prompt: str = "",
+        skill_registry: "SkillRegistry | None" = None,
+        skills_config: "SkillsConfig | None" = None,
     ) -> None:
         self._input_builder = InputBuilder(
             context=context,
             memory=memory,
             memory_top_k=memory_top_k,
             system_prompt=system_prompt,
+            skill_registry=skill_registry,
+            skills_config=skills_config,
         )
 
     @property

@@ -19,28 +19,28 @@ import asyncio
 from collections.abc import Callable
 from typing import Any
 
-from src.mindbot.agent.approval import ApprovalManager
-from src.mindbot.config.schema import ToolApprovalConfig
-from src.mindbot.agent.input import InputManager
-from src.mindbot.agent.interrupt import AgentExecution, InterruptException
-from src.mindbot.agent.models import (
+from mindbot.agent.approval import ApprovalManager
+from mindbot.config.schema import ToolApprovalConfig
+from mindbot.agent.input import InputManager
+from mindbot.agent.interrupt import AgentExecution, InterruptException
+from mindbot.agent.models import (
     AgentDecision,
     AgentEvent,
     AgentResponse,
     StopReason,
 )
-from src.mindbot.agent.streaming import StreamingExecutor
-from src.mindbot.context.models import ChatResponse, Message, ToolCall
-from src.mindbot.providers.adapter import ProviderAdapter
-from src.mindbot.capability.backends.tooling.models import Tool
-from src.mindbot.utils import get_logger
+from mindbot.agent.streaming import StreamingExecutor
+from mindbot.context.models import ChatResponse, Message, ToolCall
+from mindbot.providers.adapter import ProviderAdapter
+from mindbot.capability.backends.tooling.models import Tool
+from mindbot.utils import get_logger
 
 # TYPE_CHECKING import keeps the capability layer an optional dependency during
 # Phase 1; the orchestrator still defaults to the existing ToolRegistry path.
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
-    from src.mindbot.capability.models import CapabilityQuery
-    from src.mindbot.capability.facade import CapabilityFacade
+    from mindbot.capability.models import CapabilityQuery
+    from mindbot.capability.facade import CapabilityFacade
 
 logger = get_logger("agent.orchestrator")
 
@@ -70,14 +70,13 @@ class AgentOrchestrator:
             approval_config: Tool approval configuration
             max_iterations: Maximum tool iterations per request
             capability_facade: Optional CapabilityFacade injected for Phase 2+
-                capability-layer execution.  When *None* (default) the
-                orchestrator falls back to the current ToolRegistry path so
-                that existing behaviour is completely unchanged.
+                capability-layer execution.
         """
         self._llm = llm
         self._tools = tools or []
         self._max_iterations = max_iterations
         self._capability_facade = capability_facade
+        self._tool_capability_facade = self._build_tool_capability_facade()
 
         # Initialize components
         self._streaming_executor = StreamingExecutor(llm)
@@ -257,7 +256,7 @@ class AgentOrchestrator:
         Returns:
             List of tool results
         """
-        from src.mindbot.context.models import ToolResult
+        from mindbot.context.models import ToolResult
 
         results: list[ToolResult] = []
 
@@ -313,32 +312,26 @@ class AgentOrchestrator:
 
             # Execute tool
             try:
-                if self._capability_facade is not None:
-                    from src.mindbot.capability.models import CapabilityQuery
+                if self._tool_capability_facade is None:
+                    raise RuntimeError("Tool execution requires a capability facade")
 
-                    content = await self._capability_facade.resolve_and_execute(
-                        CapabilityQuery(name=tool_call.name),
-                        arguments=tool_call.arguments,
-                        context={
-                            "tool_call_id": tool_call.id,
-                            "turn_id": turn_id,
-                        },
+                from mindbot.capability.models import CapabilityQuery, CapabilityType
+
+                content = await self._tool_capability_facade.resolve_and_execute(
+                    CapabilityQuery(name=tool_call.name, capability_type=CapabilityType.TOOL),
+                    arguments=tool_call.arguments,
+                    context={
+                        "tool_call_id": tool_call.id,
+                        "turn_id": turn_id,
+                    },
+                )
+                tool_results = [
+                    ToolResult(
+                        tool_call_id=tool_call.id,
+                        success=True,
+                        content=content,
                     )
-                    tool_results = [
-                        ToolResult(
-                            tool_call_id=tool_call.id,
-                            success=True,
-                            content=content,
-                        )
-                    ]
-                else:
-                    # Import here to avoid circular dependency
-                    from src.mindbot.capability.backends.tooling.executor import ToolExecutor
-                    from src.mindbot.capability.backends.tooling.registry import ToolRegistry
-
-                    registry = ToolRegistry.from_tools(self._tools)
-                    executor = ToolExecutor(registry)
-                    tool_results = await executor.execute_batch([tool_call])
+                ]
 
                 results.extend(tool_results)
 
@@ -404,7 +397,7 @@ class AgentOrchestrator:
             request_id: The request ID from the TOOL_CALL_REQUEST event
             decision: The user's decision
         """
-        from src.mindbot.agent.models import ApprovalDecision
+        from mindbot.agent.models import ApprovalDecision
 
         self._approval_manager.resolve(
             request_id,
@@ -433,6 +426,16 @@ class AgentOrchestrator:
         """
         self._approval_manager.remove_from_whitelist(tool_name)
 
+    def _build_tool_capability_facade(self) -> "CapabilityFacade | None":
+        """Build the capability view used to execute this orchestrator's tools."""
+        from mindbot.capability.facade import build_turn_scoped_facade
+
+        return build_turn_scoped_facade(
+            self._capability_facade,
+            self._tools,
+            override_tool_capabilities=self._capability_facade is None,
+        )
+
     def reload_tools(self, tools: list[Tool] | None = None) -> int:
         """Replace or refresh the bound tool list."""
         if tools is not None:
@@ -441,6 +444,7 @@ class AgentOrchestrator:
             self._llm_with_tools = self._llm.bind_tools(self._tools)
         else:
             self._llm_with_tools = self._llm
+        self._tool_capability_facade = self._build_tool_capability_facade()
         return len(self._tools)
 
     def add_tool(self, tool: Tool) -> None:

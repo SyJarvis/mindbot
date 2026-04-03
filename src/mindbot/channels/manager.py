@@ -8,10 +8,10 @@ from typing import Any
 
 from loguru import logger
 
-from src.mindbot.bus.events import OutboundMessage
-from src.mindbot.bus.outbound import build_outbound_message
-from src.mindbot.bus.queue import MessageBus
-from src.mindbot.channels.base import BaseChannel
+from mindbot.bus.events import OutboundMessage
+from mindbot.bus.outbound import build_outbound_message
+from mindbot.bus.queue import MessageBus
+from mindbot.channels.base import BaseChannel
 
 
 class ChannelManager:
@@ -45,7 +45,7 @@ class ChannelManager:
         http_config = getattr(channels_config, "http", None)
         if http_config and getattr(http_config, "enabled", False):
             try:
-                from src.mindbot.channels.http import HTTPChannel
+                from mindbot.channels.http import HTTPChannel
                 self.channels["http"] = HTTPChannel(http_config, self.bus)
                 logger.info("HTTP channel enabled")
             except ImportError as e:
@@ -55,7 +55,7 @@ class ChannelManager:
         cli_config = getattr(channels_config, "cli", None)
         if cli_config and getattr(cli_config, "enabled", False):
             try:
-                from src.mindbot.channels.cli import CLIChannel
+                from mindbot.channels.cli import CLIChannel
                 self.channels["cli"] = CLIChannel(cli_config, self.bus)
                 logger.info("CLI channel enabled")
             except ImportError as e:
@@ -75,7 +75,7 @@ class ChannelManager:
         feishu_config = getattr(channels_config, "feishu", None)
         if feishu_config and getattr(feishu_config, "enabled", False):
             try:
-                from src.mindbot.channels.feishu import FeishuChannel
+                from mindbot.channels.feishu import FeishuChannel
                 self.channels["feishu"] = FeishuChannel(feishu_config, self.bus)
                 logger.info("Feishu channel enabled")
             except ImportError as e:

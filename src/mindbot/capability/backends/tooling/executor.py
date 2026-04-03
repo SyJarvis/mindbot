@@ -6,9 +6,9 @@ import asyncio
 import inspect
 from typing import Any
 
-from src.mindbot.capability.backends.tooling.registry import ToolRegistry
-from src.mindbot.context.models import ToolCall, ToolResult
-from src.mindbot.utils import get_logger, truncate
+from mindbot.capability.backends.tooling.registry import ToolRegistry
+from mindbot.context.models import ToolCall, ToolResult
+from mindbot.utils import get_logger, truncate
 
 logger = get_logger("tooling.executor")
 

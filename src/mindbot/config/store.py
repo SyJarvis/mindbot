@@ -7,8 +7,8 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Awaitable, Callable
 
-from src.mindbot.config.schema import Config, ProviderInstanceConfig
-from src.mindbot.config.loader import load_config
+from mindbot.config.schema import Config, ProviderInstanceConfig
+from mindbot.config.loader import load_config
 
 if TYPE_CHECKING:
     pass
@@ -93,7 +93,7 @@ class ConfigStore:
             logger.warning("Cannot watch: no file path set")
             return
 
-        from src.mindbot.config.watcher import start_watcher
+        from mindbot.config.watcher import start_watcher
         self._watcher_task = asyncio.create_task(
             start_watcher(self._path, self._on_file_changed)
         )

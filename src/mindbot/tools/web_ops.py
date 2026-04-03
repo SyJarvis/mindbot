@@ -7,7 +7,7 @@ import re
 from html import unescape
 from urllib.parse import urlparse
 
-from src.mindbot.capability.backends.tooling.models import Tool
+from mindbot.capability.backends.tooling.models import Tool
 
 _USER_AGENT = "MindBot/1.0"
 

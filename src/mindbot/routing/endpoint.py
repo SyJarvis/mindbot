@@ -15,9 +15,9 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from src.mindbot.config.schema import Config, EndpointConfig
+    from mindbot.config.schema import Config, EndpointConfig
 
-from src.mindbot.routing.models import EndpointCandidate
+from mindbot.routing.models import EndpointCandidate
 
 
 @dataclass

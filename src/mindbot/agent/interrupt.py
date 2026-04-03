@@ -127,7 +127,7 @@ async def with_interrupt_check(
         if await execution.check_interrupted():
             task.cancel()
             if on_event:
-                from src.mindbot.agent.models import AgentEvent
+                from mindbot.agent.models import AgentEvent
                 on_event(AgentEvent.aborted())
             raise InterruptException("Execution aborted by user")
         try:

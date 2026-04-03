@@ -1,7 +1,7 @@
 """Agent subsystem."""
 
-from src.mindbot.agent.agent import Agent
-from src.mindbot.agent.models import (
+from mindbot.agent.agent import Agent
+from mindbot.agent.models import (
     AgentDecision,
     AgentEvent,
     AgentResponse,
@@ -10,11 +10,11 @@ from src.mindbot.agent.models import (
     StopReason,
     TurnResult,
 )
-from src.mindbot.agent.multi_agent import MultiAgentOrchestrator
-from src.mindbot.agent.core import MindAgent
-from src.mindbot.agent.input_builder import InputBuilder
-from src.mindbot.agent.persistence_writer import PersistenceWriter
-from src.mindbot.agent.scheduler import Scheduler
+from mindbot.agent.multi_agent import MultiAgentOrchestrator
+from mindbot.agent.core import MindAgent
+from mindbot.agent.input_builder import InputBuilder
+from mindbot.agent.persistence_writer import PersistenceWriter
+from mindbot.agent.scheduler import Scheduler
 
 __all__ = [
     # Core

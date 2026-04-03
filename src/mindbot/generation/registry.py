@@ -16,14 +16,14 @@ import time
 from pathlib import Path
 from typing import Iterator
 
-from src.mindbot.generation.models import (
+from mindbot.generation.models import (
     ToolDefinition,
     ToolDefinitionConflictError,
     ToolDefinitionError,
     ToolDefinitionNotFoundError,
 )
-from src.mindbot.generation.validator import validate_tool_definition
-from src.mindbot.utils import get_logger
+from mindbot.generation.validator import validate_tool_definition
+from mindbot.utils import get_logger
 
 logger = get_logger("generation.registry")
 

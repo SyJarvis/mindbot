@@ -19,19 +19,6 @@ import asyncio
 import time
 from pathlib import Path
 
-
-def make_config(config_path: Path | None):
-    from mindbot.config.loader import load_config
-    from mindbot.config.schema import AgentConfig, Config, ProviderConfig
-
-    if config_path and config_path.exists():
-        return load_config(config_path)
-    return Config(
-        agent=AgentConfig(model="ollama/qwen3-vl:8b"),
-        providers={"ollama": ProviderConfig(base_url="http://localhost:11434", api_key="")},
-    )
-
-
 async def main() -> None:
     parser = argparse.ArgumentParser(description="MindBot 流式输出示例")
     parser.add_argument("--config", type=Path, default=Path.home() / ".mindbot" / "settings.yaml")
@@ -39,8 +26,8 @@ async def main() -> None:
     args = parser.parse_args()
 
     from mindbot import MindBot
-
-    bot = MindBot(config=make_config(args.config))
+    from mindbot.config.loader import load_config
+    bot = MindBot(config=load_config(Path.home() / ".mindbot" / "settings.json"))
 
     print(f"User: {args.message}")
     print("-" * 60)

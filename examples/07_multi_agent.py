@@ -15,14 +15,12 @@ from __future__ import annotations
 
 import asyncio
 
-
+from mindbot.config.loader import load_config
+from pathlib import Path
 def make_config():
-    from mindbot.config.schema import AgentConfig, Config, ProviderConfig
-
-    return Config(
-        agent=AgentConfig(model="ollama/qwen3-vl:8b"),
-        providers={"ollama": ProviderConfig(base_url="http://localhost:11434", api_key="")},
-    )
+    """Load the user's config file and override only the system prompt."""
+    config = load_config(Path.home() / ".mindbot" / "settings.json")
+    return config
 
 
 def make_llm(config=None):

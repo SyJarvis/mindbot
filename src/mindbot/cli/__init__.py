@@ -41,6 +41,35 @@ def _read_template(name: str) -> str:
     return ref.read_text(encoding="utf-8")
 
 
+def _copy_builtin_skills(skills_dir: Path) -> None:
+    """Copy built-in skills from templates to *skills_dir*, skipping existing ones."""
+    from importlib import resources
+
+    templates = resources.files("mindbot.templates").joinpath("skills")
+    for skill_entry in templates.iterdir():
+        if not skill_entry.is_dir():
+            continue
+        target = skills_dir / skill_entry.name
+        if target.exists():
+            continue
+        # Recursively copy the skill directory
+        _copy_tree(skill_entry, target)
+
+
+def _copy_tree(src, dst: Path) -> None:
+    """Recursively copy a directory tree from an importlib resource path."""
+    from importlib import resources
+    import shutil
+
+    dst.mkdir(parents=True, exist_ok=True)
+    for entry in src.iterdir():
+        child = dst / entry.name
+        if entry.is_dir():
+            _copy_tree(entry, child)
+        else:
+            child.write_bytes(entry.read_bytes())
+
+
 def _find_config_file() -> Path | None:
     """Find the active config file (JSON only)."""
     root = Path.home() / ".mindbot"
@@ -83,6 +112,9 @@ def onboard(
     # Create workspace sub-directories
     for d in ("skills", "memory", "history", "cron"):
         (root / d).mkdir(exist_ok=True)
+
+    # Copy built-in skills from templates (skip if user skill already exists)
+    _copy_builtin_skills(root / "skills")
 
     console.print(f"[green]✓[/green] Initialized workspace at {root}")
 

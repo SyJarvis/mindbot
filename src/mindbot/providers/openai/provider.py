@@ -6,10 +6,10 @@ import copy
 import json
 from collections.abc import AsyncIterator
 from typing import Any, Self
-
-from src.mindbot.providers.base import Provider
-from src.mindbot.providers.openai.param import OpenAIProviderParam
-from src.mindbot.context.models import (
+import openai
+from mindbot.providers.base import Provider
+from mindbot.providers.openai.param import OpenAIProviderParam
+from mindbot.context.models import (
     ProviderInfo,
     ChatResponse,
     FinishReason,
@@ -19,7 +19,7 @@ from src.mindbot.context.models import (
     ToolCall,
     UsageInfo,
 )
-from src.mindbot.utils import get_logger
+from mindbot.utils import get_logger
 
 logger = get_logger("providers.openai")
 
@@ -31,11 +31,6 @@ class OpenAIProvider(Provider):
     """Concrete provider using the ``openai`` Python SDK."""
 
     def __init__(self, param: OpenAIProviderParam) -> None:
-        try:
-            import src.mindbot.providers.openai as openai  # noqa: F811
-        except ImportError as exc:
-            raise ImportError("Install the 'openai' package: pip install openai") from exc
-
         self._param = param
         client_kwargs: dict[str, Any] = {}
         if param.api_key:

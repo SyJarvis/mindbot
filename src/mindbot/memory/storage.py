@@ -11,8 +11,8 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from src.mindbot.memory.types import MemoryChunk
-from src.mindbot.utils import get_logger
+from mindbot.memory.types import MemoryChunk
+from mindbot.utils import get_logger
 
 logger = get_logger("memory.storage")
 

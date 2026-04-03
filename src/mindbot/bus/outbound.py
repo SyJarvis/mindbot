@@ -5,8 +5,8 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from src.mindbot.agent.models import AgentResponse
-from src.mindbot.bus.events import OutboundMessage
+from mindbot.agent.models import AgentResponse
+from mindbot.bus.events import OutboundMessage
 
 OUTBOUND_MESSAGE_METADATA_KEY = "outbound_message"
 

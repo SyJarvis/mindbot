@@ -1,13 +1,13 @@
 """Context management subsystem."""
 
-from src.mindbot.context.checkpoint import Checkpoint
-from src.mindbot.context.compression import (
+from mindbot.context.checkpoint import Checkpoint
+from mindbot.context.compression import (
     CompressionStrategy,
     TruncateStrategy,
     get_strategy,
 )
-from src.mindbot.context.manager import ContextBlock, ContextManager
-from src.mindbot.context.models import (
+from mindbot.context.manager import ContextBlock, ContextManager
+from mindbot.context.models import (
     ChatResponse,
     FinishReason,
     ImagePart,

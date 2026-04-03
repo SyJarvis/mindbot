@@ -5,12 +5,12 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING, Any
 
-from src.mindbot.providers.factory import ProviderFactory
-from src.mindbot.providers.param import BaseProviderParam
+from mindbot.providers.factory import ProviderFactory
+from mindbot.providers.param import BaseProviderParam
 
 if TYPE_CHECKING:
-    from src.mindbot.context.models import ChatResponse, Message, ProviderInfo
-    from src.mindbot.capability.backends.tooling.models import Tool
+    from mindbot.context.models import ChatResponse, Message, ProviderInfo
+    from mindbot.capability.backends.tooling.models import Tool
 
 
 class ProviderAdapter:

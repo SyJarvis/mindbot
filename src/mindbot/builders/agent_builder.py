@@ -32,10 +32,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from src.mindbot.agent.agent import Agent
-    from src.mindbot.capability.backends.tool_backend import ToolBackend
-    from src.mindbot.capability.facade import CapabilityFacade
-    from src.mindbot.config.schema import Config
+    from mindbot.agent.agent import Agent
+    from mindbot.capability.backends.tool_backend import ToolBackend
+    from mindbot.capability.facade import CapabilityFacade
+    from mindbot.config.schema import Config
 
 
 def _merge_tools(*tool_groups: list[Any]) -> list[Any]:
@@ -85,15 +85,15 @@ def create_agent(
     Returns:
         A fully initialised :class:`~mindbot.agent.agent.Agent`.
     """
-    from src.mindbot.agent.agent import Agent
+    from mindbot.agent.agent import Agent
 
     if llm is None:
-        from src.mindbot.builders.llm_builder import create_llm
+        from mindbot.builders.llm_builder import create_llm
         llm = create_llm(config)
 
     memory = None
     if with_memory:
-        from src.mindbot.memory.manager import MemoryManager
+        from mindbot.memory.manager import MemoryManager
         memory = MemoryManager(
             storage_path=config.memory.storage_path,
             markdown_path=config.memory.markdown_path,
@@ -101,9 +101,16 @@ def create_agent(
             enable_fts=config.memory.enable_fts,
         )
 
+    skill_registry = None
+    if config.skills.enabled:
+        from mindbot.skills import SkillLoader
+
+        skill_loader = SkillLoader(SkillLoader.default_roots(config.skills.skill_dirs))
+        skill_registry = skill_loader.load_registry()
+
     builtin_tools: list[Any] = []
     if include_builtin_tools:
-        from src.mindbot.tools import create_builtin_tools
+        from mindbot.tools import create_builtin_tools
 
         builtin_tools = create_builtin_tools(Path.cwd())
 
@@ -114,9 +121,9 @@ def create_agent(
     effective_facade = capability_facade
 
     if effective_facade is None:
-        from src.mindbot.capability.backends.tool_backend import ToolBackend
-        from src.mindbot.capability.backends.tooling.registry import ToolRegistry
-        from src.mindbot.capability.facade import CapabilityFacade
+        from mindbot.capability.backends.tool_backend import ToolBackend
+        from mindbot.capability.backends.tooling.registry import ToolRegistry
+        from mindbot.capability.facade import CapabilityFacade
 
         tool_backend = ToolBackend(
             static_registry=ToolRegistry.from_tools(merged_tools),
@@ -126,12 +133,12 @@ def create_agent(
         effective_facade.add_backend(tool_backend)
 
     if enable_dynamic_tools and effective_facade is not None:
-        from src.mindbot.capability.backends.tooling.meta_tool import create_tool_creation_tool
-        from src.mindbot.generation.dynamic_manager import DynamicToolManager
+        from mindbot.capability.backends.tooling.meta_tool import create_tool_creation_tool
+        from mindbot.generation.dynamic_manager import DynamicToolManager
 
         if tool_backend is None:
-            from src.mindbot.capability.backends.tool_backend import ToolBackend
-            from src.mindbot.capability.backends.tooling.registry import ToolRegistry
+            from mindbot.capability.backends.tool_backend import ToolBackend
+            from mindbot.capability.backends.tooling.registry import ToolRegistry
 
             tool_backend = ToolBackend(
                 static_registry=ToolRegistry.from_tools(merged_tools),
@@ -163,4 +170,6 @@ def create_agent(
         capability_facade=effective_facade,
         tool_backend=tool_backend,
         dynamic_manager=dynamic_manager,
+        skill_registry=skill_registry,
+        skills_config=config.skills,
     )

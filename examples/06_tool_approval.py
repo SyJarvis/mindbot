@@ -22,15 +22,8 @@ import asyncio
 
 from mindbot.agent.models import AgentEvent, EventType
 
-
-def make_config():
-    from mindbot.config.schema import AgentConfig, Config, ProviderConfig
-
-    return Config(
-        agent=AgentConfig(model="ollama/qwen3-vl:8b", max_tool_iterations=5),
-        providers={"ollama": ProviderConfig(base_url="http://localhost:11434", api_key="")},
-    )
-
+from mindbot.config.loader import load_config
+from pathlib import Path
 
 async def main() -> None:
     from mindbot.capability.backends.tooling import tool
@@ -68,7 +61,7 @@ async def main() -> None:
             case _:
                 events_log.append(f"{event.type.value}")
 
-    bot = MindBot(config=make_config())
+    bot = MindBot(config=load_config(Path.home() / ".mindbot" / "settings.json"))
     message = "先列出当前目录，然后告诉我现在几点了。"
 
     print(f"User: {message}")

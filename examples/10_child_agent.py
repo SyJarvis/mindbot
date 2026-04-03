@@ -14,25 +14,24 @@ Run::
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
+
+from mindbot.config.loader import load_config
 
 
 def make_config():
-    from mindbot.config.schema import AgentConfig, Config, ProviderConfig
-
-    return Config(
-        agent=AgentConfig(model="ollama/qwen3-vl:8b"),
-        providers={"ollama": ProviderConfig(base_url="http://localhost:11434", api_key="")},
-    )
+    """Load the user's existing provider config from settings.json."""
+    return load_config(Path.home() / ".mindbot" / "settings.json")
 
 
 async def main() -> None:
     from mindbot.capability.backends.tooling import tool
     from mindbot.agent.agent import Agent
+    from mindbot.agent.core import MindAgent
     from mindbot.builders import create_llm
-    from mindbot import MindBot
 
     config = make_config()
-    bot = MindBot(config=config)
+    supervisor = MindAgent(config=config)
     llm = create_llm(config)
 
     # 定义子 Agent 专用工具
@@ -49,14 +48,14 @@ async def main() -> None:
         system_prompt="你是天气查询专员，只回答天气相关问题，数据来自内置工具。",
     )
 
-    # 注册到 MindAgent
-    bot._agent.register_child_agent(weather_agent)
+    # 注册到 MindAgent supervisor
+    supervisor.register_child_agent(weather_agent)
 
-    print("已注册子 Agent:", [a.name for a in bot._agent.list_child_agents()])
+    print("已注册子 Agent:", [a.name for a in supervisor.list_child_agents()])
     print("-" * 60)
 
     # 主 Agent 正常对话
-    r1 = await bot.chat("你好，你能做什么？")
+    r1 = await supervisor.chat("你好，你能做什么？")
     print(f"[主Agent] {r1.content}\n")
 
     # 子 Agent 独立对话（有自己的 session 和工具）

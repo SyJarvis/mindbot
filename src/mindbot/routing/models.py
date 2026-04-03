@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from src.mindbot.config.schema import ModelConfig
+    from mindbot.config.schema import ModelConfig
 
 
 @dataclass

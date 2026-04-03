@@ -7,9 +7,9 @@ Upper-layer modules should import exclusively from this package:
     from mindbot.capability.backends import ExtensionBackend
 """
 
-from src.mindbot.capability.executor import CapabilityExecutor
-from src.mindbot.capability.facade import CapabilityFacade
-from src.mindbot.capability.models import (
+from mindbot.capability.executor import CapabilityExecutor
+from mindbot.capability.facade import CapabilityFacade
+from mindbot.capability.models import (
     Capability,
     CapabilityConflictError,
     CapabilityError,
@@ -18,7 +18,7 @@ from src.mindbot.capability.models import (
     CapabilityQuery,
     CapabilityType,
 )
-from src.mindbot.capability.registry import CapabilityRegistry
+from mindbot.capability.registry import CapabilityRegistry
 
 __all__ = [
     # Primary API

@@ -5,8 +5,8 @@ from __future__ import annotations
 import re
 import time
 
-from src.mindbot.memory.storage import SQLiteStorage
-from src.mindbot.memory.types import MemoryChunk
+from mindbot.memory.storage import SQLiteStorage
+from mindbot.memory.types import MemoryChunk
 
 
 class HybridSearcher:

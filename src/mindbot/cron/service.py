@@ -10,7 +10,7 @@ from typing import Any, Callable, Coroutine
 
 from loguru import logger
 
-from src.mindbot.cron.types import (
+from mindbot.cron.types import (
     CronJob,
     CronJobState,
     CronPayload,

@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from src.mindbot.capability.backends.tooling.models import Tool
-from src.mindbot.generation.dynamic_manager import DynamicToolManager
-from src.mindbot.generation.models import ImplementationType
+from mindbot.capability.backends.tooling.models import Tool
+from mindbot.generation.dynamic_manager import DynamicToolManager
+from mindbot.generation.models import ImplementationType
 
 
 def create_tool_creation_tool(manager: DynamicToolManager) -> Tool:

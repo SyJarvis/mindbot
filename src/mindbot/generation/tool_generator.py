@@ -27,15 +27,15 @@ from __future__ import annotations
 import json
 from typing import Any, Protocol, runtime_checkable
 
-from src.mindbot.generation.models import ToolDefinition
-from src.mindbot.generation.protocols import (
+from mindbot.generation.models import ToolDefinition
+from mindbot.generation.protocols import (
     GenerationRequest,
     GenerationResult,
     GenerationStatus,
     GenerationValidationError,
 )
-from src.mindbot.generation.validator import ToolDefinitionValidator
-from src.mindbot.utils import get_logger
+from mindbot.generation.validator import ToolDefinitionValidator
+from mindbot.utils import get_logger
 
 logger = get_logger("generation.tool_generator")
 
@@ -92,7 +92,7 @@ class PromptStrategy:
         self._provider = provider
 
     async def call(self, request: GenerationRequest) -> str:
-        from src.mindbot.context.models import Message
+        from mindbot.context.models import Message
 
         messages = [
             Message(role="system", content=self._SYSTEM_PROMPT),

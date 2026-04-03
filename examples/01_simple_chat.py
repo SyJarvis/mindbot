@@ -33,7 +33,7 @@ def make_config(config_path: Path | None):
 
 async def main() -> None:
     parser = argparse.ArgumentParser(description="MindBot 最简单对话示例")
-    parser.add_argument("--config", type=Path, default=Path.home() / ".mindbot" / "settings.yaml")
+    parser.add_argument("--config", type=Path, default=Path.home() / ".mindbot" / "settings.json")
     parser.add_argument("--message", type=str, default="你好，请用一句话介绍一下你自己。")
     args = parser.parse_args()
 

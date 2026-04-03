@@ -13,10 +13,10 @@ import re
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from src.mindbot.config.schema import Config, ModelConfig
-    from src.mindbot.context.models import Message
+    from mindbot.config.schema import Config, ModelConfig
+    from mindbot.context.models import Message
 
-from src.mindbot.routing.models import ModelCandidate, RoutingDecision
+from mindbot.routing.models import ModelCandidate, RoutingDecision
 
 
 class ComplexityScorer:

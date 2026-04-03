@@ -9,21 +9,23 @@ from pathlib import Path
 from dataclasses import dataclass, field
 from typing import Any
 
-from src.mindbot.config.schema import ContextBlocksConfig, ContextConfig
-from src.mindbot.context.checkpoint import Checkpoint
-from src.mindbot.context.compression import CompressionStrategy, TruncateStrategy
-from src.mindbot.context.models import Message, MessageRole
-from src.mindbot.utils import estimate_tokens, get_logger
+from mindbot.config.schema import ContextBlocksConfig, ContextConfig
+from mindbot.context.checkpoint import Checkpoint
+from mindbot.context.compression import CompressionStrategy, TruncateStrategy
+from mindbot.context.models import Message, MessageRole
+from mindbot.utils import estimate_tokens, get_logger
 
 logger = get_logger("context.manager")
 
 # Default ratios when explicit block budgets are not configured.
 _DEFAULT_RATIOS: dict[str, float] = {
-    "system_identity": 0.15,
-    "memory": 0.20,
-    "conversation": 0.40,
-    "intent_state": 0.10,
-    "user_input": 0.15,
+    "system_identity": 0.12,
+    "skills_overview": 0.08,
+    "skills_detail": 0.15,
+    "memory": 0.15,
+    "conversation": 0.35,
+    "intent_state": 0.05,
+    "user_input": 0.10,
 }
 
 
@@ -72,6 +74,8 @@ class ContextManager:
     Blocks (in canonical order):
 
     * **system_identity** – system prompt / persona.
+    * **skills_overview** – always-visible skill summaries.
+    * **skills_detail** – selected skill bodies for the current turn.
     * **memory** – retrieved memory chunks (populated per turn).
     * **conversation** – multi-turn dialogue history; subject to compression.
     * **intent_state** – optional turn-scoped intent/context hints.
@@ -166,6 +170,44 @@ class ContextManager:
         msg = Message(role="system", content=content)
         msg.token_count = estimate_tokens(msg.text)
         self._set_single_message_block("system_identity", msg)
+
+    # ------------------------------------------------------------------
+    # Skills blocks (current turn only)
+    # ------------------------------------------------------------------
+
+    def set_skills_overview(self, content: str | Message | None) -> None:
+        """Set an optional overview block listing visible skills."""
+        if content is None:
+            self.clear_skills_overview()
+            return
+
+        if isinstance(content, Message):
+            msg = content
+        else:
+            msg = Message(role="system", content=content)
+            msg.token_count = estimate_tokens(msg.text)
+        self._ensure_token_count(msg)
+        self._set_single_message_block("skills_overview", msg)
+
+    def clear_skills_overview(self) -> None:
+        self._blocks["skills_overview"].messages.clear()
+
+    def set_skills_detail(self, content: str | Message | None) -> None:
+        """Set an optional detail block for selected skill instructions."""
+        if content is None:
+            self.clear_skills_detail()
+            return
+
+        if isinstance(content, Message):
+            msg = content
+        else:
+            msg = Message(role="system", content=content)
+            msg.token_count = estimate_tokens(msg.text)
+        self._ensure_token_count(msg)
+        self._set_single_message_block("skills_detail", msg)
+
+    def clear_skills_detail(self) -> None:
+        self._blocks["skills_detail"].messages.clear()
 
     # ------------------------------------------------------------------
     # Memory block (populated externally each turn)

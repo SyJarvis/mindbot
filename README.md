@@ -21,6 +21,7 @@
 | 多 Provider | OpenAI / Ollama / Transformers / llama.cpp |
 | 可中断执行 | 用户可随时中止 Agent 运行 |
 | 记忆系统 | 短期/长期记忆，向量检索，自动归档 |
+| Skills 机制 | `SKILL.md` 技能包按需注入 prompt，默认摘要、命中后展开正文 |
 | 上下文管理 | Token 预算管理，自动压缩 |
 | 多通道支持 | CLI、HTTP、飞书、Telegram |
 | 对话追踪 | Tracer 记录完整对话日志 |
@@ -131,10 +132,24 @@ mindbot generate-config
     "short_term_retention_days": 7
   },
 
+  // Prompt-layer skills
+  "skills": {
+    "enabled": true,
+    "skill_dirs": [],
+    "always_include": ["mindbot-self-knowledge"],
+    "max_visible": 8,
+    "max_detail_load": 2,
+    "trigger_mode": "metadata-match"
+  },
+
   // 上下文配置
   "context": {
     "max_tokens": 8000,
-    "compression": "truncate"
+    "compression": "truncate",
+    "blocks": {
+      "skills_overview": 640,
+      "skills_detail": 1200
+    }
   },
 
   // 会话记录
@@ -160,6 +175,14 @@ mindbot generate-config
 ```
 
 > **注意**：YAML 配置格式已弃用，请使用 JSON/JSONC 格式。可使用 `mindbot config migrate` 迁移旧配置。
+
+### 3.1 Skills 机制
+
+- 内置 skill 位于 `mindbot/skills/<skill-name>/SKILL.md`
+- 用户自定义 skill 位于 `~/.mindbot/skills/<skill-name>/SKILL.md`
+- 每轮对话默认只向模型暴露 skill 摘要
+- 当用户问题命中 skill metadata 时，MindBot 才会把对应 `SKILL.md` 正文注入 prompt
+- skill 负责知识、流程和约束提示；tool 仍负责真实动作执行
 
 ### 4. 验证配置
 

@@ -10,9 +10,9 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
-from src.mindbot.agent.agent import Agent
-from src.mindbot.agent.models import AgentResponse, StopReason
-from src.mindbot.utils import get_logger
+from mindbot.agent.agent import Agent
+from mindbot.agent.models import AgentResponse, StopReason
+from mindbot.utils import get_logger
 
 logger = get_logger("agent.multi")
 

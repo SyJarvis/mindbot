@@ -16,7 +16,7 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
-from src.mindbot.agent.models import (
+from mindbot.agent.models import (
     AgentEvent,
     ApprovalDecision,
     ToolApprovalRequest,

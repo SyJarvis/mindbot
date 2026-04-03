@@ -6,7 +6,7 @@ to maintain backward compatibility and avoid circular imports.
 
 from __future__ import annotations
 
-from src.mindbot.config.schema import ToolApprovalConfig, ToolSecurityLevel, ToolAskMode
+from mindbot.config.schema import ToolApprovalConfig, ToolSecurityLevel, ToolAskMode
 
 __all__ = [
     "ToolApprovalConfig",

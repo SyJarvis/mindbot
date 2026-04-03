@@ -20,10 +20,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from src.mindbot.builders.model_ref import parse_model_ref
+from mindbot.builders.model_ref import parse_model_ref
 
 if TYPE_CHECKING:
-    from src.mindbot.config.schema import Config
+    from mindbot.config.schema import Config
 
 
 def create_llm(config: "Config") -> Any:
@@ -40,15 +40,15 @@ def create_llm(config: "Config") -> Any:
         An adapter that exposes ``chat`` / ``chat_stream`` / ``embed``.
     """
     if config.routing.auto:
-        from src.mindbot.routing.adapter import RoutingProviderAdapter
+        from mindbot.routing.adapter import RoutingProviderAdapter
         return RoutingProviderAdapter(config)
 
     instance_name, model_name = parse_model_ref(config.agent.model)
     provider_dict = _resolve_provider_params(config, instance_name, model_name)
 
     # Trigger provider registration before calling the factory
-    import src.mindbot.providers  # noqa: F401
-    from src.mindbot.providers.factory import ProviderFactory
+    import mindbot.providers  # noqa: F401
+    from mindbot.providers.factory import ProviderFactory
 
     # Look up the driver type from the provider instance config
     provider_cfg = config.providers.get(instance_name)

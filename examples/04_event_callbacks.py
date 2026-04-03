@@ -16,16 +16,7 @@ import asyncio
 from pathlib import Path
 
 from mindbot.agent.models import AgentEvent, EventType
-
-
-def make_config():
-    from mindbot.config.schema import AgentConfig, Config, ProviderConfig
-
-    return Config(
-        agent=AgentConfig(model="ollama/qwen3-vl:8b", max_tool_iterations=5),
-        providers={"ollama": ProviderConfig(base_url="http://localhost:11434", api_key="")},
-    )
-
+from mindbot.config.loader import load_config
 
 def on_event(event: AgentEvent) -> None:
     """Print a summary line for each agent event."""
@@ -60,7 +51,7 @@ async def main() -> None:
 
     from mindbot import MindBot
 
-    bot = MindBot(config=make_config())
+    bot = MindBot(config=load_config(Path.home() / ".mindbot" / "settings.json"))
 
     message = "现在几点了？请用工具查询一下当前时间。"
     print(f"User: {message}")

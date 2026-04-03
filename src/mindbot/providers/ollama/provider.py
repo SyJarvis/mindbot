@@ -9,10 +9,10 @@ from typing import Any, Self, AsyncIterator as _AI, Optional
 import asyncio
 import subprocess
 
-from src.mindbot.config.vision import VISION_PATTERNS
-from src.mindbot.providers.base import Provider
-from src.mindbot.providers.ollama.param import OllamaProviderParam
-from src.mindbot.context.models import (
+from mindbot.config.vision import VISION_PATTERNS
+from mindbot.providers.base import Provider
+from mindbot.providers.ollama.param import OllamaProviderParam
+from mindbot.context.models import (
     ProviderInfo,
     ChatResponse,
     FinishReason,
@@ -22,7 +22,7 @@ from src.mindbot.context.models import (
     ToolCall,
     UsageInfo,
 )
-from src.mindbot.utils import get_logger
+from mindbot.utils import get_logger
 
 logger = get_logger("providers.ollama")
 

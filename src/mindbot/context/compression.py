@@ -10,12 +10,12 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any
 
-from src.mindbot.context.models import Message
-from src.mindbot.utils import estimate_tokens, get_logger, run_sync
+from mindbot.context.models import Message
+from mindbot.utils import estimate_tokens, get_logger, run_sync
 
 if TYPE_CHECKING:
-    from src.mindbot.memory.manager import MemoryManager
-    from src.mindbot.providers.adapter import ProviderAdapter
+    from mindbot.memory.manager import MemoryManager
+    from mindbot.providers.adapter import ProviderAdapter
 
 logger = get_logger("context.compression")
 
@@ -121,7 +121,7 @@ class ExtractStrategy(CompressionStrategy):
         if len(messages) <= self._recent_keep + 1:
             return list(messages)
 
-        from src.mindbot.context.extraction import KeyInfoExtractor
+        from mindbot.context.extraction import KeyInfoExtractor
 
         system = [m for m in messages if m.role == "system"]
         non_system = [m for m in messages if m.role != "system"]
@@ -163,7 +163,7 @@ class MixStrategy(CompressionStrategy):
         if len(messages) <= self._recent_keep + 1:
             return list(messages)
 
-        from src.mindbot.context.extraction import KeyInfoExtractor
+        from mindbot.context.extraction import KeyInfoExtractor
 
         system = [m for m in messages if m.role == "system"]
         non_system = [m for m in messages if m.role != "system"]
@@ -226,7 +226,7 @@ class ArchiveStrategy(CompressionStrategy):
         if len(messages) <= self._recent_keep + 1:
             return list(messages)
 
-        from src.mindbot.context.archiver import MemoryArchiver
+        from mindbot.context.archiver import MemoryArchiver
 
         system = [m for m in messages if m.role == "system"]
         non_system = [m for m in messages if m.role != "system"]

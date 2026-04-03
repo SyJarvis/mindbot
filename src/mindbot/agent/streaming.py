@@ -14,10 +14,10 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from typing import Any, Callable
 
-from src.mindbot.agent.models import AgentEvent
-from src.mindbot.context.models import ChatResponse, Message, ToolCall
-from src.mindbot.providers.adapter import ProviderAdapter
-from src.mindbot.utils import get_logger
+from mindbot.agent.models import AgentEvent
+from mindbot.context.models import ChatResponse, Message, ToolCall
+from mindbot.providers.adapter import ProviderAdapter
+from mindbot.utils import get_logger
 
 
 logger = get_logger("agent.streaming")

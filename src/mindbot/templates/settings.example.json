@@ -60,9 +60,23 @@
     "markdown_path": "~/.mindbot/data/memory",
     "short_term_retention_days": 7
   },
+  "skills": {
+    "enabled": true,
+    "skill_dirs": [],
+    "always_include": [
+      "mindbot-self-knowledge"
+    ],
+    "max_visible": 8,
+    "max_detail_load": 2,
+    "trigger_mode": "metadata-match"
+  },
   "context": {
     "max_tokens": 8000,
-    "compression": "truncate"
+    "compression": "truncate",
+    "blocks": {
+      "skills_overview": 640,
+      "skills_detail": 1200
+    }
   },
   "session_journal": {
     "enabled": true,

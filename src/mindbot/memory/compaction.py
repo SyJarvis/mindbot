@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import time
 
-from src.mindbot.memory.storage import SQLiteStorage
-from src.mindbot.utils import get_logger
+from mindbot.memory.storage import SQLiteStorage
+from mindbot.utils import get_logger
 
 logger = get_logger("memory.compaction")
 

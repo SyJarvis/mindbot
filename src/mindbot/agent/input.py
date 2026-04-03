@@ -11,7 +11,7 @@ import uuid
 from dataclasses import dataclass
 from typing import Callable
 
-from src.mindbot.agent.models import AgentEvent, InputRequest
+from mindbot.agent.models import AgentEvent, InputRequest
 
 
 @dataclass

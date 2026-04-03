@@ -16,15 +16,15 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
-from src.mindbot.agent.models import AgentEvent, AgentResponse, StopReason
-from src.mindbot.agent.streaming import StreamingExecutor
-from src.mindbot.context.models import Message, ToolCall
-from src.mindbot.providers.adapter import ProviderAdapter
-from src.mindbot.utils import get_logger
+from mindbot.agent.models import AgentEvent, AgentResponse, StopReason
+from mindbot.agent.streaming import StreamingExecutor
+from mindbot.context.models import Message, ToolCall
+from mindbot.providers.adapter import ProviderAdapter
+from mindbot.utils import get_logger
 
 if TYPE_CHECKING:
-    from src.mindbot.capability.facade import CapabilityFacade
-    from src.mindbot.capability.backends.tooling.models import Tool
+    from mindbot.capability.facade import CapabilityFacade
+    from mindbot.capability.backends.tooling.models import Tool
 
 logger = get_logger("agent.turn_engine")
 
@@ -163,7 +163,7 @@ class TurnEngine:
         turn_id: str | None = None,
     ) -> list[Any]:
         """Execute tool calls via CapabilityFacade (preferred) or direct registry."""
-        from src.mindbot.context.models import ToolResult
+        from mindbot.context.models import ToolResult
 
         results: list[ToolResult] = []
 
@@ -205,34 +205,29 @@ class TurnEngine:
     ) -> Any:
         """Single dispatch point for tool execution.
 
-        Prefers :class:`~mindbot.capability.facade.CapabilityFacade` when
-        available; falls back to a direct :class:`ToolExecutor` otherwise.
+        Tool execution always goes through the turn-scoped capability view so
+        the executable set matches the tools that were exposed to the LLM.
         """
-        from src.mindbot.context.models import ToolResult
+        from mindbot.context.models import ToolResult
 
-        if self._capability_facade is not None:
-            from src.mindbot.capability.models import CapabilityQuery
+        if self._capability_facade is None:
+            raise RuntimeError("Tool execution requires a capability facade")
 
-            content = await self._capability_facade.resolve_and_execute(
-                CapabilityQuery(name=tool_call.name),
-                arguments=tool_call.arguments,
-                context={
-                    "tool_call_id": tool_call.id,
-                    "turn_id": turn_id,
-                },
-            )
-            return ToolResult(
-                tool_call_id=tool_call.id,
-                success=True,
-                content=content,
-            )
+        from mindbot.capability.models import CapabilityQuery, CapabilityType
 
-        from src.mindbot.capability.backends.tooling.executor import ToolExecutor
-        from src.mindbot.capability.backends.tooling.registry import ToolRegistry
-
-        registry = ToolRegistry.from_tools(self._tools)
-        executor = ToolExecutor(registry)
-        return await executor.execute(tool_call)
+        content = await self._capability_facade.resolve_and_execute(
+            CapabilityQuery(name=tool_call.name, capability_type=CapabilityType.TOOL),
+            arguments=tool_call.arguments,
+            context={
+                "tool_call_id": tool_call.id,
+                "turn_id": turn_id,
+            },
+        )
+        return ToolResult(
+            tool_call_id=tool_call.id,
+            success=True,
+            content=content,
+        )
 
     @staticmethod
     def _has_repeated_tool_call(

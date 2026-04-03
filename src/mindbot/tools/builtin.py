@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from src.mindbot.capability.backends.tooling.models import Tool
-from src.mindbot.tools.file_ops import create_file_tools
-from src.mindbot.tools.shell_ops import create_shell_tools
-from src.mindbot.tools.web_ops import create_web_tools
+from mindbot.capability.backends.tooling.models import Tool
+from mindbot.tools.file_ops import create_file_tools
+from mindbot.tools.mindbot_ops import create_mindbot_tools
+from mindbot.tools.shell_ops import create_shell_tools
+from mindbot.tools.web_ops import create_web_tools
 
 
 def create_builtin_tools(
@@ -30,5 +31,6 @@ def create_builtin_tools(
             restrict_to_workspace=restrict_to_workspace,
         )
     )
+    tools.extend(create_mindbot_tools(root))
     tools.extend(create_web_tools())
     return tools

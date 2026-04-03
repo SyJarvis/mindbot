@@ -7,7 +7,7 @@ import os
 import re
 from pathlib import Path
 
-from src.mindbot.capability.backends.tooling.models import Tool
+from mindbot.capability.backends.tooling.models import Tool
 
 _DANGEROUS_PATTERNS = [
     r"\brm\s+-[rf]{1,2}\b",

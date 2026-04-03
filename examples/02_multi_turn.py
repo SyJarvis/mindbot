@@ -15,21 +15,13 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
-
-
-def make_config():
-    from mindbot.config.schema import AgentConfig, Config, ProviderConfig
-
-    return Config(
-        agent=AgentConfig(model="ollama/qwen3-vl:8b"),
-        providers={"ollama": ProviderConfig(base_url="http://localhost:11434", api_key="")},
-    )
+from mindbot.config.loader import load_config
 
 
 async def main() -> None:
     from mindbot import MindBot
 
-    bot = MindBot(config=make_config())
+    bot = MindBot(config=load_config(Path.home() / ".mindbot" / "settings.json"))
 
     # 同一 session 的多轮对话
     session_id = "demo-session-alice"

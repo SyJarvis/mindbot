@@ -1,0 +1,50 @@
+{
+  "nodes": [
+    {
+      "id": "start",
+      "content": "# 故事标题\n\n这里是故事的开始。使用 Markdown 格式编写内容。\n\n支持 LaTeX 数学公式：\n\n$$E = mc^2$$\n\n$$s = v_0t + \\frac{1}{2}at^2$$\n\n\n## 选项设计提示\n\n选项应该是自然的对话回应，类似完形填空。",
+      "options": [
+        {
+          "text": "选项文本：用户会说的话",
+          "nextNodeId": "next_node_1"
+        },
+        {
+          "text": "另一个选项",
+          "nextNodeId": "next_node_2"
+        }
+      ]
+    },
+    {
+      "id": "next_node_1",
+      "content": "这是选项1指向的节点内容。\n\n可以继续添加更多选项，直到结局。",
+      "options": [
+        {
+          "text": "继续前进",
+          "nextNodeId": "ending"
+        }
+      ]
+    },
+    {
+      "id": "next_node_2",
+      "content": "这是选项2指向的节点内容。\n\n不同分支可以有不同的内容，但最终应汇聚到同一个结局。",
+      "options": [
+        {
+          "text": "继续前进",
+          "nextNodeId": "ending"
+        }
+      ]
+    },
+    {
+      "id": "ending",
+      "content": "# 结局\n\n这是所有分支汇聚的最终结局。\n\n在此处总结学习内容，提供完整的知识点回顾。\n\n恭喜用户完成互动小说学习体验！",
+      "isEnding": true
+    }
+  ],
+  "metadata": {
+    "title": "互动小说标题",
+    "theme": "学习主题",
+    "difficulty": "难度级别（beginner/intermediate/advanced）",
+    "author": "作者",
+    "version": "1.0"
+  }
+}

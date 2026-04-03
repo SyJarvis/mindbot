@@ -9,9 +9,9 @@ from aiohttp import web
 
 from loguru import logger
 
-from src.mindbot.bus.events import OutboundMessage
-from src.mindbot.bus.queue import MessageBus
-from src.mindbot.channels.base import BaseChannel
+from mindbot.bus.events import OutboundMessage
+from mindbot.bus.queue import MessageBus
+from mindbot.channels.base import BaseChannel
 
 
 async def cors_middleware(app: web.Application, handler: Any) -> Any:

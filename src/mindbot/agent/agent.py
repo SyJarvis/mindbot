@@ -15,24 +15,28 @@ from __future__ import annotations
 
 from collections import OrderedDict
 from collections.abc import AsyncIterator, Callable
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from src.mindbot.agent.input_builder import InputBuilder
-from src.mindbot.agent.models import AgentEvent, AgentResponse, StopReason
-from src.mindbot.agent.persistence_writer import PersistenceWriter, ToolPersistence
-from src.mindbot.agent.turn_engine import TurnEngine
-from src.mindbot.capability.backends.tooling import ToolRegistry
-from src.mindbot.capability.backends.tooling.models import Tool
-from src.mindbot.config.schema import ContextConfig
-from src.mindbot.context import ContextManager
-from src.mindbot.providers.adapter import ProviderAdapter
-from src.mindbot.utils import get_logger
+from mindbot.agent.input_builder import InputBuilder
+from mindbot.agent.models import AgentEvent, AgentResponse, StopReason
+from mindbot.agent.persistence_writer import PersistenceWriter, ToolPersistence
+from mindbot.agent.turn_engine import TurnEngine
+from mindbot.capability.backends.tooling import ToolRegistry
+from mindbot.capability.backends.tooling.models import Tool
+from mindbot.config.schema import ContextConfig
+from mindbot.context import ContextManager
+from mindbot.providers.adapter import ProviderAdapter
+from mindbot.utils import get_logger
 
 if TYPE_CHECKING:
-    from src.mindbot.capability.backends.tool_backend import ToolBackend
-    from src.mindbot.capability.facade import CapabilityFacade
-    from src.mindbot.generation.dynamic_manager import DynamicToolManager
-    from src.mindbot.memory.manager import MemoryManager
+    from mindbot.capability.backends.tool_backend import ToolBackend
+    from mindbot.capability.backends.tooling.models import Tool as StaticTool
+    from mindbot.capability.facade import CapabilityFacade, ScopedCapabilityFacade
+    from mindbot.config.schema import SkillsConfig
+    from mindbot.generation.dynamic_manager import DynamicToolManager
+    from mindbot.memory.manager import MemoryManager
+    from mindbot.skills.registry import SkillRegistry
 
 logger = get_logger("agent")
 
@@ -70,6 +74,15 @@ def _normalize_registered_tool(tool: Any) -> Any:
     )
 
 
+@dataclass(frozen=True)
+class _TurnExecutionContext:
+    """Runtime resources derived for one chat turn."""
+
+    tools: list["StaticTool"]
+    capability_facade: "CapabilityFacade | ScopedCapabilityFacade | None"
+    tools_override_active: bool
+
+
 class Agent:
     """A self-contained conversational agent.
 
@@ -99,6 +112,8 @@ class Agent:
         capability_facade: "CapabilityFacade | None" = None,
         tool_backend: "ToolBackend | None" = None,
         dynamic_manager: "DynamicToolManager | None" = None,
+        skill_registry: "SkillRegistry | None" = None,
+        skills_config: "SkillsConfig | None" = None,
     ) -> None:
         self.name = name
         self.llm = llm
@@ -112,6 +127,8 @@ class Agent:
         self._capability_facade = capability_facade
         self._tool_backend = tool_backend
         self._dynamic_manager = dynamic_manager
+        self._skill_registry = skill_registry
+        self._skills_config = skills_config
 
         # Tool registry – pre-populate from constructor args
         self.tool_registry = ToolRegistry()
@@ -122,7 +139,10 @@ class Agent:
         self._sessions: OrderedDict[str, ContextManager] = OrderedDict()
         self._turn_engines: OrderedDict[str, TurnEngine] = OrderedDict()
         # frozenset[tuple[name, id]] – detects same-name tool replacement
-        self._turn_engine_tool_signatures: dict[str, frozenset[tuple[str, int]]] = {}
+        self._turn_engine_tool_signatures: dict[
+            str,
+            tuple[bool, frozenset[tuple[str, int]]],
+        ] = {}
         self._capability_tool_cache: dict[str, Tool] = {}
 
     # ------------------------------------------------------------------
@@ -224,6 +244,8 @@ class Agent:
             memory=self.memory,
             memory_top_k=self._memory_top_k,
             system_prompt=self.system_prompt,
+            skill_registry=self._skill_registry,
+            skills_config=self._skills_config,
         )
 
     # ------------------------------------------------------------------
@@ -242,6 +264,37 @@ class Agent:
             sigs.add((name, id(t)))
         return frozenset(sigs)
 
+    def _build_turn_context(
+        self,
+        tools: list[Any] | None,
+    ) -> _TurnExecutionContext:
+        """Build the tool/capability view used for one turn."""
+        from mindbot.capability.facade import build_turn_scoped_facade
+
+        tools_override_active = tools is not None
+        if tools_override_active:
+            effective_tools = [_normalize_registered_tool(tool) for tool in tools or []]
+            capability_facade = build_turn_scoped_facade(
+                self._capability_facade,
+                effective_tools,
+                override_tool_capabilities=True,
+            )
+        else:
+            effective_tools = self.list_tools()
+            if self._capability_facade is not None:
+                capability_facade = self._capability_facade
+            else:
+                capability_facade = build_turn_scoped_facade(
+                    None,
+                    effective_tools,
+                    override_tool_capabilities=False,
+                )
+        return _TurnExecutionContext(
+            tools=effective_tools,
+            capability_facade=capability_facade,
+            tools_override_active=tools_override_active,
+        )
+
     # ------------------------------------------------------------------
     # Orchestrator cache (per session)
     # ------------------------------------------------------------------
@@ -249,18 +302,21 @@ class Agent:
     def _get_turn_engine(
         self,
         session_id: str,
-        effective_tools: list[Any],
+        turn_context: _TurnExecutionContext,
     ) -> TurnEngine:
         """Return the turn engine for *session_id*, rebuilding if tools changed."""
-        tool_signature = self._get_tool_signature(effective_tools)
+        tool_signature = (
+            turn_context.tools_override_active,
+            self._get_tool_signature(turn_context.tools),
+        )
         cached_sig = self._turn_engine_tool_signatures.get(session_id)
 
         if session_id not in self._turn_engines or cached_sig != tool_signature:
             turn_engine = TurnEngine(
                 llm=self.llm,
-                tools=effective_tools,
+                tools=turn_context.tools,
                 max_iterations=self._max_iterations,
-                capability_facade=self._capability_facade,
+                capability_facade=turn_context.capability_facade,
             )
             self._turn_engines[session_id] = turn_engine
             self._turn_engines.move_to_end(session_id)
@@ -286,13 +342,13 @@ class Agent:
         *,
         message: str,
         session_id: str,
-        effective_tools: list[Any],
+        turn_context: _TurnExecutionContext,
         on_event: Callable[[AgentEvent], None] | None = None,
     ) -> AgentResponse:
         """Run one turn through the shared execution path."""
         input_builder = self._get_session_input_builder(session_id)
         messages = input_builder.build(message, session_id=session_id)
-        turn_engine = self._get_turn_engine(session_id, effective_tools)
+        turn_engine = self._get_turn_engine(session_id, turn_context)
         response = await turn_engine.run(
             messages=messages,
             on_event=on_event,
@@ -325,12 +381,12 @@ class Agent:
         Returns:
             :class:`~mindbot.agent.models.AgentResponse`
         """
-        effective_tools = tools if tools is not None else self.list_tools()
+        turn_context = self._build_turn_context(tools)
 
         response = await self._run_turn(
             message=message,
             session_id=session_id,
-            effective_tools=effective_tools,
+            turn_context=turn_context,
             on_event=on_event,
         )
 
@@ -357,11 +413,11 @@ class Agent:
         Yields:
             String chunks of the assistant response.
         """
-        effective_tools = tools if tools is not None else self.list_tools()
+        turn_context = self._build_turn_context(tools)
         response = await self._run_turn(
             message=message,
             session_id=session_id,
-            effective_tools=effective_tools,
+            turn_context=turn_context,
         )
         if response.content:
             yield response.content

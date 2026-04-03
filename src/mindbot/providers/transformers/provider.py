@@ -5,9 +5,9 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from typing import Any, Self
 
-from src.mindbot.providers.base import Provider
-from src.mindbot.providers.transformers.param import TransformersProviderParam
-from src.mindbot.context.models import ChatResponse, Message, ProviderInfo
+from mindbot.providers.base import Provider
+from mindbot.providers.transformers.param import TransformersProviderParam
+from mindbot.context.models import ChatResponse, Message, ProviderInfo
 
 
 class TransformersProvider(Provider):

@@ -16,14 +16,14 @@ from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from src.mindbot.config.schema import Config
-    from src.mindbot.context.models import ChatResponse, Message, ProviderInfo
-    from src.mindbot.capability.backends.tooling.models import Tool
+    from mindbot.config.schema import Config
+    from mindbot.context.models import ChatResponse, Message, ProviderInfo
+    from mindbot.capability.backends.tooling.models import Tool
 
-from src.mindbot.routing.router import ModelRouter
-from src.mindbot.routing.endpoint import EndpointManager
-from src.mindbot.routing.models import RoutingDecision
-from src.mindbot.providers.adapter import ProviderAdapter
+from mindbot.routing.router import ModelRouter
+from mindbot.routing.endpoint import EndpointManager
+from mindbot.routing.models import RoutingDecision
+from mindbot.providers.adapter import ProviderAdapter
 
 
 class RoutingProviderAdapter:
@@ -66,7 +66,7 @@ class RoutingProviderAdapter:
         **kwargs: Any,
     ) -> ChatResponse:
         decision = self._router.select_model(messages)
-        from src.mindbot.utils import get_logger
+        from mindbot.utils import get_logger
         logger = get_logger("routing")
         logger.info("Routing decision: %s", decision)
 
@@ -107,7 +107,7 @@ class RoutingProviderAdapter:
         **kwargs: Any,
     ) -> AsyncIterator[str]:
         decision = self._router.select_model(messages)
-        from src.mindbot.utils import get_logger
+        from mindbot.utils import get_logger
         logger = get_logger("routing")
         logger.info("Routing decision (stream): %s", decision)
 
@@ -201,7 +201,7 @@ class RoutingProviderAdapter:
         """Return (and cache) a :class:`ProviderAdapter` for the given combination."""
         key = (instance, endpoint_index, model_id)
         if key not in self._adapters:
-            import src.mindbot.providers  # noqa: F401
+            import mindbot.providers  # noqa: F401
 
             provider_cfg = self._config.providers.get(instance)
             if not provider_cfg:
