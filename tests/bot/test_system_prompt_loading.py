@@ -21,10 +21,10 @@ def _setup_workspace(root: Path, system_md: str | None = None, settings: str | N
     """Create a minimal ~/.mindbot workspace."""
     root.mkdir(parents=True, exist_ok=True)
     if settings is not None:
-        (root / "settings.yaml").write_text(settings, encoding="utf-8")
+        (root / "settings.json").write_text(settings, encoding="utf-8")
     else:
-        (root / "settings.yaml").write_text(
-            "agent:\n  model: openai/test\n", encoding="utf-8"
+        (root / "settings.json").write_text(
+            '{"agent": {"model": "openai/test"}}', encoding="utf-8"
         )
     if system_md is not None:
         (root / "SYSTEM.md").write_text(system_md, encoding="utf-8")
@@ -64,7 +64,7 @@ def test_system_prompt_missing_exits(tmp_path, monkeypatch):
 
     root = fake_home / ".mindbot"
     root.mkdir(parents=True)
-    (root / "settings.yaml").write_text("agent:\n  model: openai/test\n", encoding="utf-8")
+    (root / "settings.json").write_text('{"agent": {"model": "openai/test"}}', encoding="utf-8")
 
     from mindbot.bot import MindBot
 

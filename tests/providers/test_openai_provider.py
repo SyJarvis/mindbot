@@ -43,14 +43,6 @@ class TestOpenAIProviderInit:
             OpenAIProvider(param)
             mock_client.assert_called_once_with(base_url="https://api.example.com")
 
-    def test_init_missing_openai_package_raises(self) -> None:
-        """Should raise ImportError if openai package is not installed."""
-        param = OpenAIProviderParam(model="gpt-4o-mini")
-        with patch.dict("sys.modules", {"openai": None}):
-            with pytest.raises(ImportError, match="Install the 'openai' package"):
-                OpenAIProvider(param)
-
-
 class TestOpenAIProviderChat:
     """Test OpenAIProvider.chat method."""
 

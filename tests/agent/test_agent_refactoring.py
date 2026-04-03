@@ -21,8 +21,13 @@ import pytest
 from mindbot.agent.agent import Agent
 from mindbot.agent.core import MindAgent
 from mindbot.agent.multi_agent import MultiAgentOrchestrator
+from mindbot.agent.orchestrator import AgentOrchestrator
+from mindbot.capability.backends.tool_backend import ToolBackend
+from mindbot.capability.backends.tooling.models import tool
+from mindbot.capability.backends.tooling.registry import ToolRegistry
+from mindbot.capability.facade import CapabilityFacade
 from mindbot.config.schema import AgentConfig, Config, ContextConfig
-from mindbot.context.models import ChatResponse, FinishReason, Message
+from mindbot.context.models import ChatResponse, FinishReason, Message, ToolCall
 
 
 # ---------------------------------------------------------------------------
@@ -67,11 +72,45 @@ class FakeLLM:
         return []
 
 
+class SequenceLLM(FakeLLM):
+    """LLM stub that returns pre-seeded responses sequentially."""
+
+    def __init__(self, responses: list[ChatResponse]) -> None:
+        super().__init__(reply="")
+        self._responses = list(responses)
+        self.bound_tools: list[list[Any] | None] = []
+
+    async def chat(
+        self,
+        messages: list[Message],
+        model: str | None = None,
+        tools: list[Any] | None = None,
+        **kwargs: Any,
+    ) -> ChatResponse:
+        self.chat_calls.append(messages)
+        self.bound_tools.append(tools)
+        return self._responses.pop(0)
+
+    async def chat_stream(
+        self,
+        messages: list[Message],
+        model: str | None = None,
+        **kwargs: Any,
+    ) -> AsyncIterator[str]:
+        self.stream_calls.append(messages)
+        response = self._responses.pop(0)
+        if response.content:
+            yield response.content
+
+
 @dataclass
 class FakeTool:
     name: str
     description: str = "A test tool"
     parameters: dict = field(default_factory=lambda: {"type": "object", "properties": {}})
+
+    def parameters_json_schema(self) -> dict[str, Any]:
+        return self.parameters
 
     async def run(self, **kwargs: Any) -> str:
         return f"result_of_{self.name}"
@@ -198,6 +237,122 @@ class TestToolSignatureInvalidation:
 
         assert engine_first is not engine_second, "TurnEngine must be rebuilt on tool replacement"
         assert sig_first != sig_second
+
+
+class TestPerCallToolScope:
+
+    @staticmethod
+    def _make_capability_agent(llm: SequenceLLM) -> Agent:
+        @tool()
+        def global_echo() -> str:
+            """Return the global implementation."""
+            return "global"
+
+        backend = ToolBackend(static_registry=ToolRegistry.from_tools([global_echo]))
+        facade = CapabilityFacade()
+        facade.add_backend(backend)
+
+        return Agent(
+            name="cap-agent",
+            llm=llm,
+            tools=[global_echo],
+            context_config=ContextConfig(max_tokens=4000),
+            capability_facade=facade,
+            tool_backend=backend,
+        )
+
+    @pytest.mark.asyncio
+    async def test_per_call_tools_override_registered_tools_for_one_turn(self) -> None:
+        llm = SequenceLLM(
+            [
+                ChatResponse(
+                    content="",
+                    tool_calls=[ToolCall(id="tc1", name="global_echo", arguments={})],
+                    finish_reason=FinishReason.TOOL_CALLS,
+                ),
+                ChatResponse(content="done", finish_reason=FinishReason.STOP),
+            ]
+        )
+        agent = self._make_capability_agent(llm)
+
+        @tool()
+        def turn_echo() -> str:
+            """Return the turn implementation."""
+            return "turn"
+
+        turn_echo.name = "global_echo"
+
+        response = await agent.chat("use the tool", tools=[turn_echo])
+
+        tool_messages = [msg for msg in response.message_trace if msg.role == "tool"]
+        assert len(tool_messages) == 1
+        assert tool_messages[0].content == "turn"
+        assert llm.bound_tools[0] is not None
+        assert [tool_item.name for tool_item in llm.bound_tools[0]] == ["global_echo"]
+
+    @pytest.mark.asyncio
+    async def test_per_call_override_does_not_leak_into_next_turn(self) -> None:
+        llm = SequenceLLM(
+            [
+                ChatResponse(
+                    content="",
+                    tool_calls=[ToolCall(id="tc1", name="global_echo", arguments={})],
+                    finish_reason=FinishReason.TOOL_CALLS,
+                ),
+                ChatResponse(content="turn done", finish_reason=FinishReason.STOP),
+                ChatResponse(
+                    content="",
+                    tool_calls=[ToolCall(id="tc2", name="global_echo", arguments={})],
+                    finish_reason=FinishReason.TOOL_CALLS,
+                ),
+                ChatResponse(content="global done", finish_reason=FinishReason.STOP),
+            ]
+        )
+        agent = self._make_capability_agent(llm)
+
+        @tool()
+        def turn_echo() -> str:
+            """Return the turn implementation."""
+            return "turn"
+
+        turn_echo.name = "global_echo"
+
+        first = await agent.chat("first", session_id="shared", tools=[turn_echo])
+        second = await agent.chat("second", session_id="shared")
+
+        first_tool_msgs = [msg for msg in first.message_trace if msg.role == "tool"]
+        second_tool_msgs = [msg for msg in second.message_trace if msg.role == "tool"]
+
+        assert first_tool_msgs[0].content == "turn"
+        assert second_tool_msgs[0].content == "global"
+
+
+class TestLegacyOrchestratorToolScope:
+
+    @pytest.mark.asyncio
+    async def test_orchestrator_executes_bound_tools_without_global_facade(self) -> None:
+        llm = SequenceLLM(
+            [
+                ChatResponse(
+                    content="",
+                    tool_calls=[ToolCall(id="tc1", name="legacy_echo", arguments={})],
+                    finish_reason=FinishReason.TOOL_CALLS,
+                ),
+                ChatResponse(content="legacy done", finish_reason=FinishReason.STOP),
+            ]
+        )
+
+        @tool()
+        def legacy_echo() -> str:
+            """Return a legacy tool result."""
+            return "legacy"
+
+        orchestrator = AgentOrchestrator(llm=llm, tools=[legacy_echo])
+        response = await orchestrator.chat([Message(role="user", content="run tool")])
+
+        tool_messages = [msg for msg in response.message_trace if msg.role == "tool"]
+        assert len(tool_messages) == 1
+        assert tool_messages[0].content == "legacy"
 
 
 # ---------------------------------------------------------------------------

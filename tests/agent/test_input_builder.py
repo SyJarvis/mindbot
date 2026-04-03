@@ -10,13 +10,16 @@ Covers:
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import pytest
 
 from mindbot.agent.input_builder import InputBuilder
-from mindbot.config.schema import ContextConfig
+from mindbot.config.schema import ContextConfig, SkillsConfig
 from mindbot.context.manager import ContextManager
+from mindbot.skills.models import SkillDefinition
+from mindbot.skills.registry import SkillRegistry
 
 
 # ---------------------------------------------------------------------------
@@ -79,23 +82,43 @@ class TestBuild:
         assert msgs[-1].role == "user"
         assert msgs[-1].content == "hello"
 
-    def test_block_order_system_memory_conversation_intent_user(
+    def test_block_order_system_skills_memory_conversation_intent_user(
         self, ctx: ContextManager, memory_with_chunks: FakeMemoryManager,
     ) -> None:
         ctx.set_system_identity("You are helpful.")
         ctx.add_conversation_message("user", "earlier")
         ctx.add_conversation_message("assistant", "earlier reply")
+        registry = SkillRegistry.from_skills([
+            SkillDefinition(
+                name="python-helper",
+                description="Answers Python questions",
+                when_to_use="Use for Python programming questions",
+                body="Prefer Python-specific guidance.",
+                loaded_from="builtin",
+                skill_dir=Path("/tmp/python-helper"),
+            )
+        ])
 
-        builder = InputBuilder(context=ctx, memory=memory_with_chunks)
+        builder = InputBuilder(
+            context=ctx,
+            memory=memory_with_chunks,
+            skill_registry=registry,
+            skills_config=SkillsConfig(
+                max_visible=4,
+                max_detail_load=1,
+                trigger_mode="explicit-only",
+            ),
+        )
         msgs = builder.build("new question", intent_state="Be concise.")
 
         roles = [m.role for m in msgs]
         assert roles[0] == "system"      # system_identity
-        assert roles[1] == "system"      # memory
-        assert roles[2] == "user"        # conversation
-        assert roles[3] == "assistant"   # conversation
-        assert roles[4] == "system"      # intent_state
-        assert roles[5] == "user"        # user_input
+        assert roles[1] == "system"      # skills_overview
+        assert roles[2] == "system"      # memory
+        assert roles[3] == "user"        # conversation
+        assert roles[4] == "assistant"   # conversation
+        assert roles[5] == "system"      # intent_state
+        assert roles[6] == "user"        # user_input
         assert msgs[-1].content == "new question"
         assert msgs[-2].content == "Be concise."
 
@@ -166,3 +189,49 @@ class TestBuild:
         builder = InputBuilder(context=ctx, system_prompt="sys")
         builder.build("hello")
         assert "prepare_for_llm" not in call_log
+
+    def test_skills_blocks_populated_for_matching_query(self, ctx: ContextManager) -> None:
+        registry = SkillRegistry.from_skills([
+            SkillDefinition(
+                name="python-helper",
+                description="Answers Python questions",
+                when_to_use="Use for Python programming questions",
+                body="Prefer Python-specific guidance.",
+                loaded_from="builtin",
+                skill_dir=Path("/tmp/python-helper"),
+            )
+        ])
+        builder = InputBuilder(
+            context=ctx,
+            skill_registry=registry,
+            skills_config=SkillsConfig(max_visible=4, max_detail_load=1),
+        )
+
+        msgs = builder.build("Need help with Python functions")
+
+        assert "Available skills:" in ctx.get_block("skills_overview").messages[0].content
+        assert "Selected skill: python-helper" in ctx.get_block("skills_detail").messages[0].content
+        assert msgs[0].content.startswith("Available skills:")
+        assert msgs[1].content.startswith("Selected skill:")
+
+    def test_skills_detail_omitted_when_nothing_matches(self, ctx: ContextManager) -> None:
+        registry = SkillRegistry.from_skills([
+            SkillDefinition(
+                name="python-helper",
+                description="Answers Python questions",
+                when_to_use="Use for Python programming questions",
+                body="Prefer Python-specific guidance.",
+                loaded_from="builtin",
+                skill_dir=Path("/tmp/python-helper"),
+            )
+        ])
+        builder = InputBuilder(
+            context=ctx,
+            skill_registry=registry,
+            skills_config=SkillsConfig(always_include=["python-helper"], max_visible=4, max_detail_load=1),
+        )
+
+        builder.build("Tell me a joke")
+
+        assert "Available skills:" in ctx.get_block("skills_overview").messages[0].content
+        assert ctx.get_block("skills_detail").messages == []

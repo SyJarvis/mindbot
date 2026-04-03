@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -69,3 +70,65 @@ def test_list_directory_outside_workspace_rejected(tmp_path: Path) -> None:
     result = tools["list_directory"].handler("~/research")  # type: ignore[union-attr]
     assert "outside the allowed workspace" in result
     assert "~/research" in result or "research" in result
+
+
+def test_get_mindbot_runtime_info_reports_config_and_skills(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    home = tmp_path / "home"
+    mindbot_home = home / ".mindbot"
+    mindbot_home.mkdir(parents=True)
+    (mindbot_home / "SYSTEM.md").write_text("system prompt", encoding="utf-8")
+    (mindbot_home / "settings.json").write_text(
+        """
+        {
+          "agent": {"model": "openai/test"},
+          "memory": {
+            "storage_path": "~/.mindbot/data/memory.db",
+            "markdown_path": "~/.mindbot/data/memory",
+            "short_term_retention_days": 7,
+            "enable_fts": true
+          },
+          "skills": {
+            "enabled": true,
+            "always_include": ["mindbot-self-knowledge"],
+            "max_visible": 8,
+            "max_detail_load": 2,
+            "trigger_mode": "metadata-match"
+          },
+          "session_journal": {
+            "enabled": true,
+            "path": "~/.mindbot/data/journal"
+          }
+        }
+        """.strip(),
+        encoding="utf-8",
+    )
+    data_dir = mindbot_home / "data"
+    # Create a minimal skill so the runtime info reports at least one loaded skill
+    skill_dir = mindbot_home / "skills" / "mindbot-self-knowledge"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\nname: mindbot-self-knowledge\ndescription: Self knowledge\n---\n\n# Self Knowledge",
+        encoding="utf-8",
+    )
+    (data_dir / "memory").mkdir(parents=True)
+    (data_dir / "journal").mkdir(parents=True)
+    (data_dir / "memory.db").write_text("db", encoding="utf-8")
+    (data_dir / "memory" / "2026-04-02.md").write_text("memory", encoding="utf-8")
+    (data_dir / "journal" / "session.jsonl").write_text("{}", encoding="utf-8")
+
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.delenv("MIND_CONFIG_PATH", raising=False)
+
+    tools = _tool_map(tmp_path)
+    payload = tools["get_mindbot_runtime_info"].handler()  # type: ignore[union-attr]
+    data = json.loads(payload)
+
+    assert data["config"]["mindbot_home"] == str(mindbot_home)
+    assert data["config"]["agent_model"] == "openai/test"
+    assert data["memory"]["storage"]["exists"] is True
+    assert data["journal"]["enabled"] is True
+    assert data["skills"]["loaded_skill_count"] >= 1
+    assert "mindbot-self-knowledge" in data["skills"]["loaded_skill_names"]

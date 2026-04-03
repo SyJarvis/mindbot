@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import pytest
 
-from mindbot.capability.facade import CapabilityFacade
+from mindbot.capability.backends.tool_backend import ToolBackend
+from mindbot.capability.backends.tooling.models import tool
+from mindbot.capability.backends.tooling.registry import ToolRegistry
+from mindbot.capability.facade import CapabilityFacade, ScopedCapabilityFacade, build_turn_scoped_facade
 from mindbot.capability.models import (
     Capability,
     CapabilityExecutionError,
@@ -212,3 +215,73 @@ async def test_execute_routes_to_correct_backend(
 
     assert b1.executed == [("cap_a", {})]
     assert b2.executed == [("cap_b", {})]
+
+
+def test_scoped_facade_lists_overlay_before_base(sample_capability: Capability) -> None:
+    base = _facade_with_backend(MockBackend([sample_capability]))
+    overlay_cap = Capability(
+        id="overlay_cap",
+        name="OverlayCap",
+        description="turn scoped",
+        capability_type=CapabilityType.TOOL,
+    )
+    scoped = ScopedCapabilityFacade(base)
+    scoped.add_overlay_backend(MockBackend([overlay_cap]))
+
+    caps = scoped.list_capabilities()
+    assert [cap.id for cap in caps] == ["overlay_cap", "cap_a"]
+
+
+@pytest.mark.asyncio
+async def test_build_turn_scoped_facade_overrides_base_tool_capability() -> None:
+    @tool()
+    def shared_tool() -> str:
+        """Return the global result."""
+        return "global"
+
+    @tool()
+    def shared_tool_override() -> str:
+        """Return the turn result."""
+        return "turn"
+
+    shared_tool_override.name = "shared_tool"
+
+    base = CapabilityFacade()
+    base.add_backend(ToolBackend(static_registry=ToolRegistry.from_tools([shared_tool])))
+
+    scoped = build_turn_scoped_facade(
+        base,
+        [shared_tool_override],
+        override_tool_capabilities=True,
+    )
+    assert scoped is not None
+
+    result = await scoped.resolve_and_execute(
+        CapabilityQuery(name="shared_tool", capability_type=CapabilityType.TOOL),
+        arguments={},
+    )
+    assert result == "turn"
+
+
+@pytest.mark.asyncio
+async def test_build_turn_scoped_facade_hides_base_tools_when_override_empty() -> None:
+    @tool()
+    def only_global() -> str:
+        """A globally registered tool."""
+        return "global"
+
+    base = CapabilityFacade()
+    base.add_backend(ToolBackend(static_registry=ToolRegistry.from_tools([only_global])))
+
+    scoped = build_turn_scoped_facade(
+        base,
+        [],
+        override_tool_capabilities=True,
+    )
+    assert scoped is not None
+
+    with pytest.raises(CapabilityNotFoundError):
+        await scoped.resolve_and_execute(
+            CapabilityQuery(name="only_global", capability_type=CapabilityType.TOOL),
+            arguments={},
+        )

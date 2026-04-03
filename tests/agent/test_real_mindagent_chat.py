@@ -3,7 +3,7 @@
 运行方式（需加 -s 才能看到打印）:
   PYTHONPATH=src pytest --noconftest tests/agent/test_real_mindagent_chat.py -s -v
 
-若 ~/.mindbot/settings.yaml 不存在则跳过。
+若 ~/.mindbot/settings.json 不存在则跳过。
 默认关闭工具审批，避免测试卡在 request_approval 上。
 """
 
@@ -20,7 +20,7 @@ USER_MESSAGE = "查看~/research目录下有啥文件..."
 @pytest.mark.asyncio
 async def test_real_mindagent_chat_list_research_dir() -> None:
     """用真实 MindAgent 发送「查看~/research目录下有啥文件」，打印 AI 回复。"""
-    config_file = Path.home() / ".mindbot" / "settings.yaml"
+    config_file = Path.home() / ".mindbot" / "settings.json"
     if not config_file.exists():
         pytest.skip(f"Config not found: {config_file} (run mindbot generate-config)")
 
