@@ -1,0 +1,114 @@
+/* MindBot Docs Custom Styles */
+
+:root {
+  --md-primary-fg-color: #3f51b5;
+  --md-accent-fg-color: #536dfe;
+}
+
+/* ===== Grid 卡片布局 ===== */
+.md-typeset .grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.8rem;
+}
+
+.md-typeset .grid > * {
+  margin-bottom: 0;
+}
+
+/* ===== 导航切换防跳动 ===== */
+
+/* 固定侧边栏宽度，防止不同页面内容长度导致宽度变化 */
+.md-sidebar--primary {
+  width: 14rem !important;
+  min-width: 14rem !important;
+  max-width: 14rem !important;
+}
+
+/* 内容区域平滑过渡 */
+.md-content {
+  transition: opacity 0.15s ease;
+}
+
+/* 侧边栏项高亮过渡 */
+.md-sidebar__inner {
+  scroll-behavior: smooth;
+}
+
+/* 导航链接去除点击时的位移 */
+.md-nav__link {
+  transition: color 0.1s ease, background-color 0.1s ease;
+}
+
+/* 防止 SPA 切换时内容闪烁 */
+.md-main__inner {
+  min-height: 60vh;
+}
+
+/* ===== Mermaid 图表 ===== */
+.mermaid {
+  max-width: 100%;
+  margin: 1em auto;
+}
+
+.mermaid svg {
+  max-width: 100%;
+  height: auto;
+}
+
+/* ===== 中文排版 ===== */
+.md-typeset {
+  line-height: 1.8;
+}
+
+.md-typeset h1 {
+  margin-top: 0;
+  margin-bottom: 0.8em;
+}
+
+.md-typeset h2 {
+  margin-top: 1.4em;
+  margin-bottom: 0.6em;
+  padding-bottom: 0.3em;
+  border-bottom: 1px solid var(--md-default-fg-color--lightest);
+}
+
+.md-typeset h3 {
+  margin-top: 1em;
+  margin-bottom: 0.4em;
+}
+
+/* ===== 表格 ===== */
+.md-typeset table:not([class]) {
+  font-size: 0.85em;
+  display: table;
+  width: 100%;
+}
+
+.md-typeset table:not([class]) th {
+  background-color: var(--md-default-bg-color--lightest);
+  white-space: nowrap;
+}
+
+/* ===== 代码块 ===== */
+.md-typeset code {
+  font-size: 0.85em;
+}
+
+.md-typeset pre {
+  font-size: 0.82em;
+}
+
+/* ===== 提示框 ===== */
+.md-typeset .admonition,
+.md-typeset details {
+  font-size: 0.9em;
+}
+
+/* ===== 首页徽章 ===== */
+.md-typeset img[alt~="Version"],
+.md-typeset img[alt~="Python"],
+.md-typeset img[alt~="License"] {
+  height: 1.2em;
+  vertical-align: middle;
+}

@@ -1,0 +1,186 @@
+# MindBot Documentation - Zensical Configuration
+
+[project]
+site_name = "MindBot"
+site_description = "基于 Python + asyncio 的模块化 AI Agent 框架"
+site_url = "https://syjarvis.github.io/mindbot/"
+site_author = "Runke Zhong"
+docs_dir = "docs"
+site_dir = "site"
+copyright = "Copyright &copy; 2026-present Runke Zhong - MIT License"
+
+repo_name = "SyJarvis/mindbot"
+repo_url = "https://github.com/SyJarvis/mindbot"
+edit_uri = "edit/main/docs/"
+
+extra_css = ["stylesheets/extra.css"]
+
+# ---------------------------------------------------------------------------
+# Navigation
+# ---------------------------------------------------------------------------
+
+nav = [
+  { "首页" = "index.md" },
+  { "使用手册" = [
+    "guide/index.md",
+    { "安装" = "guide/installation.md" },
+    { "快速开始" = "guide/quickstart.md" },
+    { "CLI 参考" = "guide/cli-reference.md" },
+    { "Shell 命令" = "guide/shell-commands.md" },
+    { "示例" = "guide/examples.md" },
+    { "多 Agent 编排" = "guide/multi-agent.md" },
+    { "技能使用" = "guide/skills.md" },
+  ]},
+  { "架构" = [
+    "architecture/overview.md",
+    { "执行流程" = "architecture/execution-flow.md" },
+    { "分层架构" = [
+      "architecture/layers.md",
+      { "L1 接口/传输" = "architecture/L1-interface-transport.md" },
+      { "L2 应用/编排" = "architecture/L2-application-orchestration.md" },
+      { "L3 对话领域" = "architecture/L3-conversation-domain.md" },
+      { "L4 能力领域" = "architecture/L4-capability-domain.md" },
+      { "L5 基础设施" = "architecture/L5-infrastructure-adapters.md" },
+    ]},
+  ]},
+  { "配置" = [
+    "configuration/index.md",
+    { "Provider 配置" = "configuration/providers.md" },
+    { "安全配置" = "configuration/security.md" },
+    { "通道配置" = "configuration/channels-config.md" },
+  ]},
+  { "API 参考" = [
+    "api/index.md",
+    { "MindBot 入口" = "api/mindbot.md" },
+    { "Agent 系统" = "api/agent.md" },
+    { "数据模型" = "api/models.md" },
+    { "枚举类型" = "api/enums.md" },
+    { "上下文管理" = "api/context.md" },
+  ]},
+  { "测试" = "testing/index.md" },
+  { "开发" = [
+    "develop/index.md",
+    { "贡献指南" = "develop/contributing.md" },
+    { "Git 指南" = "develop/git-guide.md" },
+  ]},
+  { "更新日志" = [
+    "changelog/index.md",
+    { "v0.3" = "changelog/v0.3.md" },
+    { "v0.2" = "changelog/v0.2.md" },
+    { "v0.1" = "changelog/v0.1.md" },
+  ]},
+]
+
+# ---------------------------------------------------------------------------
+# Theme
+# ---------------------------------------------------------------------------
+
+[project.theme]
+variant = "classic"
+language = "zh"
+logo = "assets/mindbot_logo.png"
+favicon = "assets/mindbot_logo.png"
+
+features = [
+  "navigation.instant",
+  "navigation.tracking",
+  "navigation.sections",
+  "navigation.expand",
+  "navigation.indexes",
+  "navigation.top",
+  "search.suggest",
+  "search.highlight",
+  "search.share",
+  "toc.follow",
+  "content.code.copy",
+  "content.code.annotate",
+]
+
+[project.theme.font]
+text = "Noto Sans SC"
+code = "JetBrains Mono"
+
+[project.theme.icon]
+repo = "fontawesome/brands/github"
+
+[[project.theme.palette]]
+scheme = "default"
+primary = "indigo"
+accent = "indigo"
+toggle.icon = "material/brightness-7"
+toggle.name = "切换到暗色模式"
+
+[[project.theme.palette]]
+scheme = "slate"
+primary = "indigo"
+accent = "indigo"
+toggle.icon = "material/brightness-4"
+toggle.name = "切换到亮色模式"
+
+# ---------------------------------------------------------------------------
+# Plugins
+# ---------------------------------------------------------------------------
+
+[project.plugins.search]
+lang = ["zh", "en"]
+separator = "[\\s\\-,:!=\\[\\]()\"'/、。，？！：；。〈〉（）]+"
+
+# ---------------------------------------------------------------------------
+# Markdown Extensions
+# ---------------------------------------------------------------------------
+
+[project.markdown_extensions.abbr]
+[project.markdown_extensions.admonition]
+[project.markdown_extensions.attr_list]
+[project.markdown_extensions.def_list]
+[project.markdown_extensions.footnotes]
+[project.markdown_extensions.md_in_html]
+
+[project.markdown_extensions.toc]
+permalink = true
+toc_depth = 3
+
+[project.markdown_extensions.pymdownx.betterem]
+[project.markdown_extensions.pymdownx.caret]
+[project.markdown_extensions.pymdownx.mark]
+[project.markdown_extensions.pymdownx.tilde]
+[project.markdown_extensions.pymdownx.details]
+
+[project.markdown_extensions.pymdownx.emoji]
+emoji_index = "zensical.extensions.emoji.twemoji"
+emoji_generator = "zensical.extensions.emoji.to_svg"
+
+[project.markdown_extensions.pymdownx.highlight]
+anchor_linenums = true
+line_spans = "__span"
+
+[project.markdown_extensions.pymdownx.inlinehilite]
+[project.markdown_extensions.pymdownx.keys]
+
+[project.markdown_extensions.pymdownx.magiclink]
+repo_url_shorthand = true
+user = "SyJarvis"
+repo = "mindbot"
+
+[project.markdown_extensions.pymdownx.snippets]
+check_paths = true
+
+[project.markdown_extensions.pymdownx.superfences]
+custom_fences = [
+  { name = "mermaid", class = "mermaid", format = "pymdownx.superfences.fence_code_format" },
+]
+
+[project.markdown_extensions.pymdownx.tabbed]
+alternate_style = true
+
+[project.markdown_extensions.pymdownx.tasklist]
+custom_checkbox = true
+
+# ---------------------------------------------------------------------------
+# Extra
+# ---------------------------------------------------------------------------
+
+[[project.extra.social]]
+icon = "fontawesome/brands/github"
+link = "https://github.com/SyJarvis/mindbot"
+name = "GitHub"
