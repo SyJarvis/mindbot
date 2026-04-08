@@ -36,6 +36,7 @@ if TYPE_CHECKING:
     from mindbot.config.schema import SkillsConfig
     from mindbot.generation.dynamic_manager import DynamicToolManager
     from mindbot.memory.manager import MemoryManager
+    from mindbot.session.store import SessionJournal
     from mindbot.skills.registry import SkillRegistry
 
 logger = get_logger("agent")
@@ -144,6 +145,8 @@ class Agent:
             tuple[bool, frozenset[tuple[str, int]]],
         ] = {}
         self._capability_tool_cache: dict[str, Tool] = {}
+        self._journal: "SessionJournal | None" = None
+        self._journal_sessions: set[str] = set()
 
     # ------------------------------------------------------------------
     # Tool management
@@ -209,6 +212,12 @@ class Agent:
     def has_tool(self, tool_name: str) -> bool:
         """Return whether a tool is currently visible to the LLM."""
         return any(getattr(tool, "name", None) == tool_name for tool in self.list_tools())
+
+    def set_session_journal(self, journal: "SessionJournal | None") -> None:
+        """Attach or detach the shared session journal for this agent."""
+        self._journal = journal
+        if journal is None:
+            self._journal_sessions.clear()
 
     # ------------------------------------------------------------------
     # Session management (LRU)
@@ -330,12 +339,15 @@ class Agent:
     def _get_persistence_writer(self, session_id: str) -> PersistenceWriter:
         """Build a :class:`PersistenceWriter` for *session_id*."""
         context = self._get_session_context(session_id)
-        return PersistenceWriter(
+        writer = PersistenceWriter(
             context=context,
             memory=self.memory,
+            journal=self._journal,
             tool_persistence=self._tool_persistence,
             system_prompt=self.system_prompt,
         )
+        writer._journal_sessions = self._journal_sessions
+        return writer
 
     async def _run_turn(
         self,

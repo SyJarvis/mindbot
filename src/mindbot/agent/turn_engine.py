@@ -13,6 +13,7 @@ the facade / backend layer for environments without a full capability stack.
 
 from __future__ import annotations
 
+import uuid
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
@@ -61,7 +62,9 @@ class TurnEngine:
         * tool result messages
         * the **final** assistant message (always present for completed turns)
         """
+        resolved_turn_id = turn_id or uuid.uuid4().hex
         response = AgentResponse(content="")
+        response.metadata["turn_id"] = resolved_turn_id
         initial_len = len(messages)
 
         try:
@@ -71,7 +74,7 @@ class TurnEngine:
                     iteration=iteration,
                     on_event=on_event,
                     response=response,
-                    turn_id=turn_id,
+                    turn_id=resolved_turn_id,
                 )
                 if not should_continue:
                     break
@@ -96,10 +99,23 @@ class TurnEngine:
         if response.stop_reason == StopReason.COMPLETED and response.content:
             has_final_assistant = trace and trace[-1].role == "assistant" and not trace[-1].tool_calls
             if not has_final_assistant:
-                final_msg = Message(role="assistant", content=response.content)
+                final_metadata = response.metadata.get("final_message_metadata", {})
+                final_msg = self._make_trace_message(
+                    role="assistant",
+                    content=response.content,
+                    turn_id=resolved_turn_id,
+                    iteration=len([msg for msg in trace if msg.role == "assistant" and msg.tool_calls]) or 0,
+                    message_kind="assistant_text",
+                    provider=final_metadata.get("provider"),
+                    usage=final_metadata.get("usage"),
+                    finish_reason=final_metadata.get("finish_reason"),
+                    stop_reason=response.stop_reason.value,
+                )
                 messages.append(final_msg)
                 trace = messages[initial_len:]
 
+        if trace:
+            trace[-1].stop_reason = response.stop_reason.value
         response.message_trace = trace
         return response
 
@@ -123,30 +139,46 @@ class TurnEngine:
 
         tool_calls = llm_response.tool_calls
         if not tool_calls:
+            response.metadata["final_message_metadata"] = {
+                "provider": llm_response.provider,
+                "usage": llm_response.usage,
+                "finish_reason": getattr(llm_response.finish_reason, "value", llm_response.finish_reason),
+            }
             response.stop_reason = StopReason.COMPLETED
             return False, messages
 
-        messages.append(
-            Message(
-                role="assistant",
-                content=llm_response.content or "",
-                tool_calls=tool_calls,
-                reasoning_content=llm_response.reasoning_content,
-            )
+        assistant_message = self._make_trace_message(
+            role="assistant",
+            content=llm_response.content or "",
+            turn_id=turn_id,
+            iteration=iteration,
+            message_kind="assistant_tool_call",
+            tool_calls=tool_calls,
+            reasoning_content=llm_response.reasoning_content,
+            provider=llm_response.provider,
+            usage=llm_response.usage,
+            finish_reason=getattr(llm_response.finish_reason, "value", llm_response.finish_reason),
         )
+        messages.append(assistant_message)
 
         tool_results = await self._execute_tool_calls(
             tool_calls=tool_calls,
             on_event=on_event,
             turn_id=turn_id,
+            iteration=iteration,
         )
 
-        for tr in tool_results:
+        for tool_call, tr in zip(tool_calls, tool_results, strict=False):
             messages.append(
-                Message(
+                self._make_trace_message(
                     role="tool",
                     content=tr.content if tr.success else f"Error: {tr.error}",
+                    turn_id=turn_id,
+                    iteration=iteration,
+                    message_kind="tool_result",
                     tool_call_id=tr.tool_call_id,
+                    tool_name=tool_call.name,
+                    error=tr.error or None,
                 )
             )
 
@@ -161,6 +193,7 @@ class TurnEngine:
         tool_calls: list[ToolCall],
         on_event: Callable[[AgentEvent], None] | None,
         turn_id: str | None = None,
+        iteration: int | None = None,
     ) -> list[Any]:
         """Execute tool calls via CapabilityFacade (preferred) or direct registry."""
         from mindbot.context.models import ToolResult
@@ -197,6 +230,44 @@ class TurnEngine:
                 )
 
         return results
+
+    @staticmethod
+    def _make_trace_message(
+        *,
+        role: str,
+        content: str,
+        turn_id: str | None,
+        iteration: int | None,
+        message_kind: str,
+        tool_calls: list[ToolCall] | None = None,
+        reasoning_content: str | None = None,
+        tool_call_id: str | None = None,
+        tool_name: str | None = None,
+        provider: Any = None,
+        usage: Any = None,
+        finish_reason: str | None = None,
+        stop_reason: str | None = None,
+        error: str | None = None,
+        is_meta: bool = False,
+    ) -> Message:
+        """Build a trace message with consistent metadata."""
+        return Message(
+            role=role,
+            content=content,
+            tool_calls=tool_calls,
+            reasoning_content=reasoning_content,
+            tool_call_id=tool_call_id,
+            turn_id=turn_id,
+            iteration=iteration,
+            message_kind=message_kind,
+            tool_name=tool_name,
+            provider=provider,
+            usage=usage,
+            finish_reason=finish_reason,
+            stop_reason=stop_reason,
+            is_meta=is_meta,
+            error=error,
+        )
 
     async def _resolve_and_execute(
         self,

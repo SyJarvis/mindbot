@@ -1,5 +1,6 @@
 """MindBot CLI."""
 
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +18,66 @@ app = typer.Typer(
 )
 
 console = Console()
+
+
+@dataclass
+class _ShellEventState:
+    """Render state for one interactive shell turn."""
+
+    saw_delta: bool = False
+    line_open: bool = False
+
+
+def _emit_shell_event(event: Any, state: _ShellEventState) -> None:
+    """Render agent events in the interactive shell."""
+    event_type = getattr(getattr(event, "type", None), "value", None)
+    data = getattr(event, "data", {}) or {}
+
+    if event_type == "delta":
+        chunk = data.get("content", "")
+        if not chunk:
+            return
+        if not state.line_open:
+            console.print()
+            state.line_open = True
+        console.print(chunk, end="")
+        state.saw_delta = True
+        return
+
+    if event_type == "tool_executing":
+        if state.line_open:
+            console.print()
+            state.line_open = False
+        tool_name = data.get("tool_name", "unknown")
+        console.print(f"[dim]Running tool: {tool_name}[/dim]")
+        return
+
+    if event_type == "tool_result":
+        if state.line_open:
+            console.print()
+            state.line_open = False
+        tool_name = data.get("tool_name", "unknown")
+        console.print(f"[dim]Tool finished: {tool_name}[/dim]")
+        return
+
+    if event_type == "error":
+        if state.line_open:
+            console.print()
+            state.line_open = False
+        message = data.get("message", "Unknown error")
+        console.print(f"[red]Error: {message}[/red]")
+
+
+def _render_shell_response(content: str, state: _ShellEventState) -> None:
+    """Render the final assistant response in shell mode."""
+    from rich.markdown import Markdown
+
+    if state.line_open:
+        console.print()
+        state.line_open = False
+    if not state.saw_delta and content:
+        console.print(Markdown(content))
+    console.print()
 
 
 def version_callback(value: bool):
@@ -323,7 +384,6 @@ def shell(
     from prompt_toolkit import PromptSession
     from prompt_toolkit.history import FileHistory
     from prompt_toolkit.styles import Style
-    from rich.markdown import Markdown
 
     config_file = _find_config_file()
     if not config_file:
@@ -368,10 +428,15 @@ def shell(
 
             console.print("[dim]Thinking...[/dim]")
             import asyncio
-            agent_response = asyncio.run(bot.chat(user_input, session_id=session_id))
-            md = Markdown(agent_response.content)
-            console.print(md)
-            console.print()
+            state = _ShellEventState()
+            agent_response = asyncio.run(
+                bot.chat(
+                    user_input,
+                    session_id=session_id,
+                    on_event=lambda event: _emit_shell_event(event, state),
+                )
+            )
+            _render_shell_response(agent_response.content, state)
         except KeyboardInterrupt:
             console.print("\n[yellow]Use 'exit' or Ctrl+D to quit[/yellow]")
         except EOFError:

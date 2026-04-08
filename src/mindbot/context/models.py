@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import time
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field, is_dataclass
 from enum import Enum
 from typing import Any, Literal
 
@@ -34,6 +34,13 @@ class ImagePart:
 MessageContent = str | list[TextPart | ImagePart]
 
 MessageRole = Literal["system", "user", "assistant", "tool"]
+MessageKind = Literal[
+    "assistant_text",
+    "assistant_tool_call",
+    "tool_result",
+    "system_injected",
+    "recovery_prompt",
+]
 
 
 # ---------------------------------------------------------------------------
@@ -94,6 +101,18 @@ class Message:
     # Present when role == "tool" – links back to the originating ToolCall.id.
     tool_call_id: str | None = None
 
+    # Trace metadata for persistence, observability, and recovery flows.
+    turn_id: str | None = None
+    iteration: int | None = None
+    message_kind: MessageKind | str | None = None
+    tool_name: str | None = None
+    provider: ProviderInfo | dict[str, Any] | None = None
+    usage: UsageInfo | dict[str, Any] | None = None
+    finish_reason: str | None = None
+    stop_reason: str | None = None
+    is_meta: bool = False
+    error: str | None = None
+
     # Metadata
     id: str = field(default_factory=lambda: uuid.uuid4().hex)
     timestamp: float = field(default_factory=time.time)
@@ -115,6 +134,29 @@ class Message:
             elif isinstance(part, ImagePart):
                 parts.append("[image]")
         return "".join(parts)
+
+    @staticmethod
+    def _json_safe_dataclass(
+        value: ProviderInfo | UsageInfo | dict[str, Any] | None,
+    ) -> dict[str, Any] | None:
+        """Convert dataclass metadata to a JSON-safe dict."""
+        if value is None:
+            return None
+        if isinstance(value, dict):
+            return dict(value)
+        if is_dataclass(value):
+            return asdict(value)
+        return None
+
+    @property
+    def provider_dict(self) -> dict[str, Any] | None:
+        """Return provider metadata as a JSON-safe dict."""
+        return self._json_safe_dataclass(self.provider)
+
+    @property
+    def usage_dict(self) -> dict[str, Any] | None:
+        """Return usage metadata as a JSON-safe dict."""
+        return self._json_safe_dataclass(self.usage)
 
 
 class FinishReason(str, Enum):

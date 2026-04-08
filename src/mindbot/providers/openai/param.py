@@ -15,6 +15,7 @@ class OpenAIProviderParam(BaseProviderParam):
     model: str = "gpt-4o-mini"
     api_key: str | None = None
     base_url: str | None = None
+    timeout: float = 120.0
     temperature: float = 0.7
     max_tokens: int | None = None
     vision_enabled: bool = False
