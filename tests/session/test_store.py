@@ -229,3 +229,32 @@ def test_reasoning_content_round_trip(journal: SessionJournal):
     journal.append("s1", msgs)
     result = journal.read("s1")
     assert result[0].reasoning_content == "let me think..."
+
+
+def test_extended_trace_fields_round_trip(journal: SessionJournal):
+    msgs = [SessionMessage(
+        role="assistant",
+        content="done",
+        turn_id="turn-1",
+        iteration=2,
+        message_kind="assistant_text",
+        tool_name="search",
+        provider={"provider": "openai", "model": "gpt-test"},
+        usage={"prompt_tokens": 10, "completion_tokens": 4, "total_tokens": 14},
+        finish_reason="stop",
+        stop_reason="completed",
+        is_meta=False,
+        error=None,
+    )]
+    journal.append("s1", msgs)
+
+    result = journal.read("s1")
+    assert result[0].turn_id == "turn-1"
+    assert result[0].iteration == 2
+    assert result[0].message_kind == "assistant_text"
+    assert result[0].tool_name == "search"
+    assert result[0].provider == {"provider": "openai", "model": "gpt-test"}
+    assert result[0].usage == {"prompt_tokens": 10, "completion_tokens": 4, "total_tokens": 14}
+    assert result[0].finish_reason == "stop"
+    assert result[0].stop_reason == "completed"
+    assert result[0].is_meta is False

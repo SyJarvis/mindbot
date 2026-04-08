@@ -34,14 +34,21 @@ class TestOpenAIProviderInit:
         param = OpenAIProviderParam(model="gpt-4o-mini", api_key="sk-test")
         with patch("openai.AsyncOpenAI") as mock_client:
             OpenAIProvider(param)
-            mock_client.assert_called_once_with(api_key="sk-test")
+            mock_client.assert_called_once_with(api_key="sk-test", timeout=120.0)
 
     def test_init_with_base_url(self) -> None:
         """Should pass base_url to OpenAI client."""
         param = OpenAIProviderParam(model="gpt-4o-mini", base_url="https://api.example.com")
         with patch("openai.AsyncOpenAI") as mock_client:
             OpenAIProvider(param)
-            mock_client.assert_called_once_with(base_url="https://api.example.com")
+            mock_client.assert_called_once_with(base_url="https://api.example.com", timeout=120.0)
+
+    def test_init_passes_default_timeout(self) -> None:
+        """Should configure a default request timeout for OpenAI-compatible endpoints."""
+        param = OpenAIProviderParam(model="gpt-4o-mini")
+        with patch("openai.AsyncOpenAI") as mock_client:
+            OpenAIProvider(param)
+            mock_client.assert_called_once_with(timeout=120.0)
 
 class TestOpenAIProviderChat:
     """Test OpenAIProvider.chat method."""

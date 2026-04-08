@@ -121,12 +121,17 @@ def _make_agent(config: Config, fake_llm: FakeLLM | None = None) -> MindAgent:
     return agent
 
 
+@pytest.fixture()
+def anyio_backend() -> str:
+    return "asyncio"
+
+
 # ---------------------------------------------------------------------------
 # Tests: chat() → journal
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_chat_writes_system_user_assistant(tmp_path):
     config = _make_config(tmp_path)
     agent = _make_agent(config)
@@ -141,9 +146,12 @@ async def test_chat_writes_system_user_assistant(tmp_path):
     assert msgs[0].content == "You are helpful."
     assert msgs[1].content == "hello"
     assert msgs[2].content == "mock reply"
+    assert msgs[2].message_kind == "assistant_text"
+    assert msgs[2].stop_reason == "completed"
+    assert msgs[2].turn_id is not None
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_chat_system_prompt_only_on_first_turn(tmp_path):
     config = _make_config(tmp_path)
     agent = _make_agent(config)
@@ -159,7 +167,7 @@ async def test_chat_system_prompt_only_on_first_turn(tmp_path):
     assert msgs[0].role == "system"
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_chat_multi_turn_ordering(tmp_path):
     config = _make_config(tmp_path)
     agent = _make_agent(config)
@@ -174,7 +182,7 @@ async def test_chat_multi_turn_ordering(tmp_path):
     assert roles == ["system", "user", "assistant", "user", "assistant"]
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_chat_no_system_prompt(tmp_path):
     config = _make_config(tmp_path, system_prompt="")
     agent = _make_agent(config)
@@ -193,7 +201,7 @@ async def test_chat_no_system_prompt(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_chat_stream_writes_journal(tmp_path):
     config = _make_config(tmp_path)
     agent = _make_agent(config)
@@ -211,6 +219,9 @@ async def test_chat_stream_writes_journal(tmp_path):
     assert roles == ["system", "user", "assistant"]
     assert msgs[1].content == "stream me"
     assert msgs[2].content == "mock reply"
+    assert msgs[2].message_kind == "assistant_text"
+    assert msgs[2].stop_reason == "completed"
+    assert msgs[2].turn_id is not None
 
 
 # ---------------------------------------------------------------------------
@@ -218,7 +229,7 @@ async def test_chat_stream_writes_journal(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_chat_and_stream_produce_same_roles(tmp_path):
     config = _make_config(tmp_path)
     agent = _make_agent(config)
@@ -230,9 +241,12 @@ async def test_chat_and_stream_produce_same_roles(tmp_path):
         pass
 
     journal = SessionJournal(tmp_path / "journal")
-    chat_roles = [m.role for m in journal.read("chat")]
-    stream_roles = [m.role for m in journal.read("stream")]
+    chat_msgs = journal.read("chat")
+    stream_msgs = journal.read("stream")
+    chat_roles = [m.role for m in chat_msgs]
+    stream_roles = [m.role for m in stream_msgs]
     assert chat_roles == stream_roles
+    assert chat_msgs[-1].message_kind == stream_msgs[-1].message_kind == "assistant_text"
 
 
 # ---------------------------------------------------------------------------
@@ -240,7 +254,7 @@ async def test_chat_and_stream_produce_same_roles(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_journal_works_without_memory(tmp_path):
     config = _make_config(tmp_path)
     agent = _make_agent(config)
@@ -264,7 +278,7 @@ async def test_journal_works_without_memory(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_journal_disabled_no_files(tmp_path):
     config = Config(
         agent={"model": "openai/test"},
@@ -282,7 +296,7 @@ async def test_journal_disabled_no_files(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_different_sessions_isolated(tmp_path):
     config = _make_config(tmp_path)
     agent = _make_agent(config)

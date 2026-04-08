@@ -18,7 +18,7 @@ from mindbot.agent.models import AgentResponse
 from mindbot.agent.persistence_writer import PersistenceWriter
 from mindbot.config.schema import ContextConfig
 from mindbot.context.manager import ContextManager
-from mindbot.context.models import Message, ToolCall
+from mindbot.context.models import Message, ProviderInfo, ToolCall, UsageInfo
 
 
 # ---------------------------------------------------------------------------
@@ -135,13 +135,17 @@ class TestToolPersistence:
 
     def test_full_keeps_all_tool_messages(self, ctx: ContextManager) -> None:
         writer = PersistenceWriter(context=ctx, tool_persistence="full")
-        writer.commit_turn("weather?", _make_response("22C.", self._make_trace()))
+        trace = self._make_trace() + [
+            Message(role="assistant", content="22C.", message_kind="assistant_text"),
+        ]
+        writer.commit_turn("weather?", _make_response("22C.", trace))
 
         conv = ctx.get_block("conversation").messages
         roles = [m.role for m in conv]
         assert "assistant" in roles
         assert "tool" in roles
         assert len(conv) == 4
+        assert conv[-1].content == "22C."
 
     def test_summary_collapses_to_system_note(self, ctx: ContextManager) -> None:
         writer = PersistenceWriter(context=ctx, tool_persistence="summary")
@@ -219,8 +223,30 @@ class TestJournalCommit:
                 role="assistant",
                 content="check",
                 tool_calls=[ToolCall(id="tc1", name="search", arguments={})],
+                turn_id="turn-1",
+                iteration=0,
+                message_kind="assistant_tool_call",
+                provider=ProviderInfo(provider="openai", model="gpt-test"),
+                usage=UsageInfo(prompt_tokens=11, completion_tokens=3, total_tokens=14),
+                finish_reason="tool_calls",
             ),
-            Message(role="tool", content="found it", tool_call_id="tc1"),
+            Message(
+                role="tool",
+                content="found it",
+                tool_call_id="tc1",
+                turn_id="turn-1",
+                iteration=0,
+                message_kind="tool_result",
+                tool_name="search",
+            ),
+            Message(
+                role="assistant",
+                content="Here.",
+                turn_id="turn-1",
+                iteration=1,
+                message_kind="assistant_text",
+                stop_reason="completed",
+            ),
         ]
         writer = PersistenceWriter(context=ctx, journal=journal)
         writer.commit_turn("find", _make_response("Here.", trace), session_id="s1")
@@ -228,10 +254,44 @@ class TestJournalCommit:
         entry = journal.entries[0]
         roles = [m.role for m in entry.messages]
         assert "tool" in roles
+        assistant_tool_msg = entry.messages[1]
+        tool_msg = entry.messages[2]
+        final_msg = entry.messages[3]
+        assert assistant_tool_msg.turn_id == "turn-1"
+        assert assistant_tool_msg.message_kind == "assistant_tool_call"
+        assert assistant_tool_msg.provider == {
+            "provider": "openai",
+            "model": "gpt-test",
+            "supports_vision": False,
+            "supports_tools": False,
+        }
+        assert assistant_tool_msg.usage == {
+            "prompt_tokens": 11,
+            "completion_tokens": 3,
+            "total_tokens": 14,
+        }
+        assert tool_msg.tool_name == "search"
+        assert final_msg.stop_reason == "completed"
 
     def test_no_journal_is_no_op(self, ctx: ContextManager) -> None:
         writer = PersistenceWriter(context=ctx, journal=None)
         writer.commit_turn("hello", _make_response("world"), session_id="s1")
+
+    def test_commit_journal_turn_supports_streaming_style_writes(
+        self, ctx: ContextManager, journal: FakeJournal,
+    ) -> None:
+        writer = PersistenceWriter(
+            context=ctx,
+            journal=journal,
+            system_prompt="You are helpful.",
+        )
+
+        writer.commit_journal_turn("stream me", "world", session_id="s1")
+
+        assert len(journal.entries) == 1
+        msgs = journal.entries[0].messages
+        assert [m.role for m in msgs] == ["system", "user", "assistant"]
+        assert msgs[-1].content == "world"
 
 
 # ---------------------------------------------------------------------------

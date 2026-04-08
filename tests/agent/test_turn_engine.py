@@ -16,7 +16,7 @@ import pytest
 
 from mindbot.agent.models import AgentEvent, AgentResponse, StopReason
 from mindbot.agent.turn_engine import TurnEngine
-from mindbot.context.models import ChatResponse, Message, ToolCall, ToolResult
+from mindbot.context.models import ChatResponse, FinishReason, Message, ProviderInfo, ToolCall, UsageInfo
 
 
 # ---------------------------------------------------------------------------
@@ -44,6 +44,11 @@ class FakeLLMAdapter:
 
     def bind_tools(self, tools: list[Any]) -> "FakeLLMAdapter":
         return self
+
+
+@pytest.fixture()
+def anyio_backend() -> str:
+    return "asyncio"
 
 
 # ---------------------------------------------------------------------------
@@ -88,10 +93,16 @@ class FakeTool:
 
 class TestNoToolTurn:
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_no_tool_trace_includes_final_assistant(self) -> None:
         llm = FakeLLMAdapter([
-            ChatResponse(content="Hello!", tool_calls=None, finish_reason="stop"),
+            ChatResponse(
+                content="Hello!",
+                tool_calls=None,
+                finish_reason=FinishReason.STOP,
+                provider=ProviderInfo(provider="openai", model="gpt-test"),
+                usage=UsageInfo(prompt_tokens=5, completion_tokens=2, total_tokens=7),
+            ),
         ])
         engine = TurnEngine(llm=llm)
         msgs = [Message(role="user", content="hi")]
@@ -101,10 +112,15 @@ class TestNoToolTurn:
         assert response.stop_reason == StopReason.COMPLETED
         assert response.content == "Hello!"
         assert len(response.message_trace) == 1
-        assert response.message_trace[0].role == "assistant"
-        assert response.message_trace[0].content == "Hello!"
+        trace_msg = response.message_trace[0]
+        assert trace_msg.role == "assistant"
+        assert trace_msg.content == "Hello!"
+        assert trace_msg.message_kind == "assistant_text"
+        assert trace_msg.finish_reason == "stop"
+        assert trace_msg.stop_reason == StopReason.COMPLETED.value
+        assert trace_msg.turn_id is not None
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_no_tool_empty_content(self) -> None:
         llm = FakeLLMAdapter([
             ChatResponse(content="", tool_calls=None, finish_reason="stop"),
@@ -125,12 +141,24 @@ class TestNoToolTurn:
 
 class TestOneToolTurn:
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_one_tool_trace_has_assistant_tool_final(self) -> None:
         tool_call = ToolCall(id="tc1", name="weather", arguments={"city": "Beijing"})
         llm = FakeLLMAdapter([
-            ChatResponse(content="", tool_calls=[tool_call], finish_reason="tool_calls"),
-            ChatResponse(content="It's 22C in Beijing.", tool_calls=None, finish_reason="stop"),
+            ChatResponse(
+                content="",
+                tool_calls=[tool_call],
+                finish_reason=FinishReason.TOOL_CALLS,
+                provider=ProviderInfo(provider="openai", model="gpt-test"),
+                usage=UsageInfo(prompt_tokens=10, completion_tokens=3, total_tokens=13),
+            ),
+            ChatResponse(
+                content="It's 22C in Beijing.",
+                tool_calls=None,
+                finish_reason=FinishReason.STOP,
+                provider=ProviderInfo(provider="openai", model="gpt-test"),
+                usage=UsageInfo(prompt_tokens=12, completion_tokens=4, total_tokens=16),
+            ),
         ])
         facade = FakeCapabilityFacade({"weather": "22C cloudy"})
         engine = TurnEngine(llm=llm, tools=[FakeTool()], capability_facade=facade)
@@ -145,11 +173,21 @@ class TestOneToolTurn:
         assert len(trace) >= 3
         assert trace[0].role == "assistant"
         assert trace[0].tool_calls is not None
+        assert trace[0].message_kind == "assistant_tool_call"
+        assert trace[0].iteration == 0
+        assert trace[0].finish_reason == "tool_calls"
         assert trace[1].role == "tool"
         assert trace[1].tool_call_id == "tc1"
+        assert trace[1].message_kind == "tool_result"
+        assert trace[1].tool_name == "weather"
+        assert trace[1].iteration == 0
         # Last message is the final assistant reply
         assert trace[-1].role == "assistant"
         assert "22C" in trace[-1].content
+        assert trace[-1].message_kind == "assistant_text"
+        assert trace[-1].stop_reason == StopReason.COMPLETED.value
+        assert trace[-1].iteration == 1
+        assert len({msg.turn_id for msg in trace}) == 1
 
 
 # ---------------------------------------------------------------------------
@@ -159,7 +197,7 @@ class TestOneToolTurn:
 
 class TestMultiToolTurn:
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_multi_tool_calls_in_single_iteration(self) -> None:
         tc1 = ToolCall(id="tc1", name="weather", arguments={"city": "A"})
         tc2 = ToolCall(id="tc2", name="weather", arguments={"city": "B"})
@@ -186,7 +224,7 @@ class TestMultiToolTurn:
 
 class TestToolFailure:
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_tool_error_captured_in_trace(self) -> None:
         tc = ToolCall(id="tc1", name="broken", arguments={})
         llm = FakeLLMAdapter([
@@ -206,6 +244,8 @@ class TestToolFailure:
         tool_msgs = [m for m in response.message_trace if m.role == "tool"]
         assert len(tool_msgs) == 1
         assert "Error:" in tool_msgs[0].content
+        assert tool_msgs[0].error == "tool crashed"
+        assert tool_msgs[0].tool_name == "broken"
 
 
 # ---------------------------------------------------------------------------
@@ -215,7 +255,7 @@ class TestToolFailure:
 
 class TestRepeatedTool:
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_repeated_tool_stops_early(self) -> None:
         tc = ToolCall(id="tc1", name="weather", arguments={"city": "X"})
         llm = FakeLLMAdapter([
@@ -229,6 +269,7 @@ class TestRepeatedTool:
         response = await engine.run(messages=msgs)
 
         assert response.stop_reason == StopReason.REPEATED_TOOL
+        assert response.message_trace[-1].stop_reason == StopReason.REPEATED_TOOL.value
 
 
 # ---------------------------------------------------------------------------
@@ -238,7 +279,7 @@ class TestRepeatedTool:
 
 class TestMaxIterations:
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_max_iterations_reached(self) -> None:
         tc = ToolCall(id="tc1", name="weather", arguments={"city": "X"})
         # Each iteration returns different args to avoid repeated-tool guard
@@ -264,7 +305,7 @@ class TestMaxIterations:
 
 class TestEvents:
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_events_emitted_for_complete_turn(self) -> None:
         llm = FakeLLMAdapter([
             ChatResponse(content="done", tool_calls=None, finish_reason="stop"),
