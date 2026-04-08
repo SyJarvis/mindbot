@@ -1,6 +1,6 @@
 """MindBot - AI Assistant (Native Implementation)."""
 
-__version__ = "0.2.0"
+__version__ = "0.3.1"
 
 __logo__ = """
 ╔════════════════════════════════════╗

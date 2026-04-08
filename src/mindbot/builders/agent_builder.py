@@ -28,7 +28,6 @@ The builder ensures:
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -112,7 +111,11 @@ def create_agent(
     if include_builtin_tools:
         from mindbot.tools import create_builtin_tools
 
-        builtin_tools = create_builtin_tools(Path.cwd())
+        builtin_tools = create_builtin_tools(
+            config.agent.workspace,
+            restrict_to_workspace=config.agent.restrict_to_workspace,
+            allowed_paths=config.agent.system_path_whitelist,
+        )
 
     merged_tools = _merge_tools(builtin_tools, tools or [])
 

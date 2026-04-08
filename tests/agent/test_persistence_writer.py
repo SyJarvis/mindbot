@@ -8,7 +8,6 @@ Covers:
 """
 
 from __future__ import annotations
-
 from dataclasses import dataclass, field
 from typing import Any, Sequence
 
@@ -194,7 +193,7 @@ class TestJournalCommit:
         self, ctx: ContextManager, journal: FakeJournal,
     ) -> None:
         writer = PersistenceWriter(context=ctx, journal=journal)
-        writer.commit_turn("hello", _make_response("world"), session_id="s1")
+        writer.commit_turn("hello", _make_response("world"), session_id="s1", user_timestamp=100.0)
 
         assert len(journal.entries) == 1
         entry = journal.entries[0]
@@ -202,6 +201,7 @@ class TestJournalCommit:
         roles = [m.role for m in entry.messages]
         assert "user" in roles
         assert "assistant" in roles
+        assert entry.messages[0].timestamp == 100.0
 
     def test_system_prompt_written_on_first_session_only(
         self, ctx: ContextManager, journal: FakeJournal,
@@ -249,14 +249,17 @@ class TestJournalCommit:
             ),
         ]
         writer = PersistenceWriter(context=ctx, journal=journal)
-        writer.commit_turn("find", _make_response("Here.", trace), session_id="s1")
+        writer.commit_turn("find", _make_response("Here.", trace), session_id="s1", user_timestamp=50.0)
 
         entry = journal.entries[0]
         roles = [m.role for m in entry.messages]
         assert "tool" in roles
+        user_msg = entry.messages[0]
         assistant_tool_msg = entry.messages[1]
         tool_msg = entry.messages[2]
         final_msg = entry.messages[3]
+        assert user_msg.timestamp == 50.0
+        assert user_msg.timestamp <= assistant_tool_msg.timestamp
         assert assistant_tool_msg.turn_id == "turn-1"
         assert assistant_tool_msg.message_kind == "assistant_tool_call"
         assert assistant_tool_msg.provider == {
@@ -272,6 +275,7 @@ class TestJournalCommit:
         }
         assert tool_msg.tool_name == "search"
         assert final_msg.stop_reason == "completed"
+        assert final_msg.content == "Here."
 
     def test_no_journal_is_no_op(self, ctx: ContextManager) -> None:
         writer = PersistenceWriter(context=ctx, journal=None)
@@ -286,11 +290,12 @@ class TestJournalCommit:
             system_prompt="You are helpful.",
         )
 
-        writer.commit_journal_turn("stream me", "world", session_id="s1")
+        writer.commit_journal_turn("stream me", "world", session_id="s1", user_timestamp=10.0)
 
         assert len(journal.entries) == 1
         msgs = journal.entries[0].messages
         assert [m.role for m in msgs] == ["system", "user", "assistant"]
+        assert msgs[1].timestamp == 10.0
         assert msgs[-1].content == "world"
 
 

@@ -134,11 +134,9 @@ class TurnEngine:
             tools=self._tools,
         )
 
-        if llm_response.content:
-            response.content += llm_response.content
-
         tool_calls = llm_response.tool_calls
         if not tool_calls:
+            response.content = llm_response.content or ""
             response.metadata["final_message_metadata"] = {
                 "provider": llm_response.provider,
                 "usage": llm_response.usage,

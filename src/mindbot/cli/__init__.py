@@ -171,7 +171,7 @@ def onboard(
     console.print(f"[green]✓[/green] Created {system_file}")
 
     # Create workspace sub-directories
-    for d in ("skills", "memory", "history", "cron"):
+    for d in ("skills", "memory", "history", "cron", "workspace"):
         (root / d).mkdir(exist_ok=True)
 
     # Copy built-in skills from templates (skip if user skill already exists)

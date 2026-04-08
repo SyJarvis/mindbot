@@ -293,6 +293,18 @@ class AgentConfig(BaseModel):
     """Agent behaviour settings."""
 
     model: str = "local-ollama/qwen3.5:2b"
+    workspace: str = Field(
+        default="~/.mindbot/workspace",
+        description="Default workspace root for builtin file and shell tools.",
+    )
+    system_path_whitelist: list[str] = Field(
+        default_factory=lambda: ["~/.mindbot"],
+        description="Additional allowed system paths for builtin file and shell tools.",
+    )
+    restrict_to_workspace: bool = Field(
+        default=True,
+        description="Restrict builtin file and shell tools to the configured workspace and allowed system paths.",
+    )
     max_tokens: int = 8192
     temperature: float = Field(default=0.7, ge=0.0, le=2.0)
     max_tool_iterations: int = 20

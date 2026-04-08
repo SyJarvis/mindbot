@@ -8,8 +8,13 @@ import pytest
 from mindbot.tools import create_builtin_tools
 
 
-def _tool_map(tmp_path: Path) -> dict[str, object]:
-    tools = create_builtin_tools(tmp_path)
+@pytest.fixture()
+def anyio_backend() -> str:
+    return "asyncio"
+
+
+def _tool_map(tmp_path: Path, *, allowed_paths: list[Path | str] | None = None) -> dict[str, object]:
+    tools = create_builtin_tools(tmp_path, allowed_paths=allowed_paths)
     return {tool.name: tool for tool in tools}
 
 
@@ -25,7 +30,7 @@ def test_read_file_uses_workspace_guard(tmp_path: Path) -> None:
     outside = tmp_path.parent / "outside.txt"
     outside.write_text("escape", encoding="utf-8")
     blocked = tools["read_file"].handler(str(outside))  # type: ignore[union-attr]
-    assert "outside the allowed workspace" in blocked
+    assert "outside the allowed paths" in blocked
 
 
 def test_edit_file_requires_unique_match(tmp_path: Path) -> None:
@@ -37,21 +42,21 @@ def test_edit_file_requires_unique_match(tmp_path: Path) -> None:
     assert "appears 2 times" in result
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_exec_command_blocks_dangerous_command(tmp_path: Path) -> None:
     tools = _tool_map(tmp_path)
     result = await tools["exec_command"].handler("rm -rf /")  # type: ignore[union-attr]
     assert "blocked by safety policy" in result
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_exec_command_runs_safe_command(tmp_path: Path) -> None:
     tools = _tool_map(tmp_path)
     result = await tools["exec_command"].handler("printf 'hello'")  # type: ignore[union-attr]
     assert "hello" in result
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_web_search_reports_missing_provider(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("BRAVE_API_KEY", raising=False)
     tools = _tool_map(tmp_path)
@@ -68,8 +73,20 @@ def test_list_directory_outside_workspace_rejected(tmp_path: Path) -> None:
     """
     tools = _tool_map(tmp_path)
     result = tools["list_directory"].handler("~/research")  # type: ignore[union-attr]
-    assert "outside the allowed workspace" in result
+    assert "outside the allowed paths" in result
     assert "~/research" in result or "research" in result
+
+
+def test_whitelisted_system_directory_is_allowed(tmp_path: Path) -> None:
+    system_dir = tmp_path / "system"
+    system_dir.mkdir()
+    target = system_dir / "state.txt"
+    target.write_text("ok", encoding="utf-8")
+
+    tools = _tool_map(tmp_path, allowed_paths=[system_dir])
+    result = tools["read_file"].handler(str(target))  # type: ignore[union-attr]
+
+    assert "1|ok" in result
 
 
 def test_get_mindbot_runtime_info_reports_config_and_skills(
@@ -128,6 +145,10 @@ def test_get_mindbot_runtime_info_reports_config_and_skills(
 
     assert data["config"]["mindbot_home"] == str(mindbot_home)
     assert data["config"]["agent_model"] == "openai/test"
+    assert data["config"]["configured_workspace"] == str((mindbot_home / "workspace").expanduser())
+    assert data["config"]["system_path_whitelist"] == [str(mindbot_home)]
+    assert str(tmp_path) in data["system"]["allowed_paths"]
+    assert "cwd" not in data["system"]
     assert data["memory"]["storage"]["exists"] is True
     assert data["journal"]["enabled"] is True
     assert data["skills"]["loaded_skill_count"] >= 1

@@ -189,6 +189,30 @@ class TestOneToolTurn:
         assert trace[-1].iteration == 1
         assert len({msg.turn_id for msg in trace}) == 1
 
+    @pytest.mark.anyio
+    async def test_final_response_excludes_tool_call_preamble_text(self) -> None:
+        tool_call = ToolCall(id="tc1", name="weather", arguments={"city": "Beijing"})
+        llm = FakeLLMAdapter([
+            ChatResponse(
+                content="Let me check that for you.",
+                tool_calls=[tool_call],
+                finish_reason=FinishReason.TOOL_CALLS,
+            ),
+            ChatResponse(
+                content="It's 22C in Beijing.",
+                tool_calls=None,
+                finish_reason=FinishReason.STOP,
+            ),
+        ])
+        facade = FakeCapabilityFacade({"weather": "22C cloudy"})
+        engine = TurnEngine(llm=llm, tools=[FakeTool()], capability_facade=facade)
+
+        response = await engine.run(messages=[Message(role="user", content="weather?")])
+
+        assert response.content == "It's 22C in Beijing."
+        assert response.message_trace[0].content == "Let me check that for you."
+        assert response.message_trace[-1].content == "It's 22C in Beijing."
+
 
 # ---------------------------------------------------------------------------
 # Multi-tool turn
