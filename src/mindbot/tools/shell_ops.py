@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Sequence
 import os
 import re
 from pathlib import Path
 
 from mindbot.capability.backends.tooling.models import Tool
+from mindbot.tools.path_policy import is_within_allowed_roots, resolve_allowed_roots
 
 _DANGEROUS_PATTERNS = [
     r"\brm\s+-[rf]{1,2}\b",
@@ -20,13 +22,18 @@ _DANGEROUS_PATTERNS = [
 
 
 def create_shell_tools(
-    workspace: Path | None = None,
+    workspace: Path | str,
     *,
     restrict_to_workspace: bool = True,
+    allowed_paths: Sequence[Path | str] | None = None,
     default_timeout: int = 30,
 ) -> list[Tool]:
     """Create shell tools bound to *workspace*."""
-    root = (workspace or Path.cwd()).expanduser().resolve()
+    root, allowed_roots = resolve_allowed_roots(
+        workspace,
+        restrict_to_workspace=restrict_to_workspace,
+        allowed_paths=allowed_paths,
+    )
 
     async def exec_command(
         command: str,
@@ -50,15 +57,20 @@ def create_shell_tools(
                 candidate = root / candidate
             try:
                 cwd = candidate.resolve()
-                if restrict_to_workspace:
-                    cwd.relative_to(root)
-            except ValueError:
-                return "Error: working_dir is outside the workspace"
+                if not is_within_allowed_roots(cwd, allowed_roots):
+                    allowed_text = ", ".join(str(path) for path in allowed_roots)
+                    return (
+                        "Error: working_dir is outside the allowed paths: "
+                        f"{working_dir} (allowed: {allowed_text})"
+                    )
             except OSError as exc:
                 return f"Error: invalid working_dir: {exc}"
 
         if restrict_to_workspace and ("../" in command or "..\\" in command):
             return "Error: command blocked due to path traversal"
+
+        if cwd == root and not cwd.exists():
+            cwd.mkdir(parents=True, exist_ok=True)
 
         try:
             process = await asyncio.create_subprocess_shell(
@@ -93,7 +105,7 @@ def create_shell_tools(
     return [
         Tool(
             name="exec_command",
-            description="Execute a shell command inside the workspace with timeout and safety checks.",
+            description="Execute a shell command inside the configured allowed paths with timeout and safety checks.",
             parameters_schema_override={
                 "type": "object",
                 "properties": {
@@ -105,7 +117,7 @@ def create_shell_tools(
                     },
                     "working_dir": {
                         "type": "string",
-                        "description": "Optional working directory relative to the workspace.",
+                        "description": "Optional working directory. Relative paths resolve under the configured workspace.",
                     },
                     "capture_stderr": {
                         "type": "boolean",

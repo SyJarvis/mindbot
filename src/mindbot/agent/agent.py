@@ -360,6 +360,7 @@ class Agent:
         """Run one turn through the shared execution path."""
         input_builder = self._get_session_input_builder(session_id)
         messages = input_builder.build(message, session_id=session_id)
+        user_timestamp = messages[-1].timestamp if messages and messages[-1].role == "user" else None
         turn_engine = self._get_turn_engine(session_id, turn_context)
         response = await turn_engine.run(
             messages=messages,
@@ -367,7 +368,12 @@ class Agent:
         )
 
         writer = self._get_persistence_writer(session_id)
-        writer.commit_turn(message, response, session_id=session_id)
+        writer.commit_turn(
+            message,
+            response,
+            session_id=session_id,
+            user_timestamp=user_timestamp,
+        )
         return response
 
     # ------------------------------------------------------------------

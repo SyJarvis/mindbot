@@ -74,6 +74,7 @@ class PersistenceWriter:
         response: "AgentResponse",
         *,
         session_id: str = "default",
+        user_timestamp: float | None = None,
     ) -> None:
         """Commit one complete turn to all persistence targets.
 
@@ -86,7 +87,13 @@ class PersistenceWriter:
 
         self._commit_conversation(user_text, assistant_text, trace)
         self._commit_memory(user_text, assistant_text)
-        self._commit_journal(user_text, assistant_text, trace, session_id)
+        self._commit_journal(
+            user_text,
+            assistant_text,
+            trace,
+            session_id,
+            user_timestamp=user_timestamp,
+        )
 
     def commit_journal_turn(
         self,
@@ -95,9 +102,16 @@ class PersistenceWriter:
         *,
         session_id: str = "default",
         trace: list[Message] | None = None,
+        user_timestamp: float | None = None,
     ) -> None:
         """Persist only the session journal for a completed turn."""
-        self._commit_journal(user_text, assistant_text, trace or [], session_id)
+        self._commit_journal(
+            user_text,
+            assistant_text,
+            trace or [],
+            session_id,
+            user_timestamp=user_timestamp,
+        )
 
     # ------------------------------------------------------------------
     # Conversation context
@@ -170,6 +184,8 @@ class PersistenceWriter:
         assistant_text: str,
         trace: list[Message],
         session_id: str,
+        *,
+        user_timestamp: float | None = None,
     ) -> None:
         """Append turn to the session journal (if enabled)."""
         if self._journal is None:
@@ -186,7 +202,10 @@ class PersistenceWriter:
                 )
             self._journal_sessions.add(session_id)
 
-        entries.append(SessionMessage(role="user", content=user_text))
+        user_entry = SessionMessage(role="user", content=user_text)
+        if user_timestamp is not None:
+            user_entry.timestamp = user_timestamp
+        entries.append(user_entry)
 
         if trace:
             entries.extend(self._msgs_to_journal(trace))

@@ -6,6 +6,7 @@ import json
 import os
 import platform
 import shutil
+from collections.abc import Sequence
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -13,6 +14,7 @@ from typing import Any
 from mindbot.capability.backends.tooling.models import Tool
 from mindbot.config.loader import load_config
 from mindbot.skills import SkillLoader
+from mindbot.tools.path_policy import resolve_allowed_roots
 
 
 def _path_info(path: Path) -> dict[str, Any]:
@@ -90,9 +92,18 @@ def _memory_total_bytes() -> int | None:
     return None
 
 
-def create_mindbot_tools(workspace: Path | None = None) -> list[Tool]:
+def create_mindbot_tools(
+    workspace: Path | str,
+    *,
+    restrict_to_workspace: bool = True,
+    allowed_paths: Sequence[Path | str] | None = None,
+) -> list[Tool]:
     """Create MindBot-specific built-in inspection tools."""
-    root = (workspace or Path.cwd()).expanduser().resolve()
+    root, allowed_roots = resolve_allowed_roots(
+        workspace,
+        restrict_to_workspace=restrict_to_workspace,
+        allowed_paths=allowed_paths,
+    )
 
     def get_mindbot_runtime_info() -> str:
         """Return basic MindBot runtime, config, skills, memory, and system info as JSON."""
@@ -144,6 +155,11 @@ def create_mindbot_tools(workspace: Path | None = None) -> list[Tool]:
             config_payload.update(
                 {
                     "agent_model": config.agent.model,
+                    "configured_workspace": str(Path(config.agent.workspace).expanduser()),
+                    "system_path_whitelist": [
+                        str(Path(path).expanduser()) for path in config.agent.system_path_whitelist
+                    ],
+                    "restrict_to_workspace": config.agent.restrict_to_workspace,
                     "provider_instances": [
                         {"name": name, "type": provider.type}
                         for name, provider in config.providers.items()
@@ -177,8 +193,8 @@ def create_mindbot_tools(workspace: Path | None = None) -> list[Tool]:
             "system": {
                 "platform": platform.platform(),
                 "python_version": platform.python_version(),
-                "cwd": str(Path.cwd()),
                 "workspace": str(root),
+                "allowed_paths": [str(path) for path in allowed_roots],
                 "cpu_count": os.cpu_count(),
                 "memory_total_bytes": _memory_total_bytes(),
                 "memory_available_bytes": _memory_available_bytes(),

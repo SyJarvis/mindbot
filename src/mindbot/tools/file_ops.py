@@ -3,19 +3,24 @@
 from __future__ import annotations
 
 import fnmatch
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
 from mindbot.capability.backends.tooling.models import Tool
+from mindbot.tools.path_policy import (
+    allowed_roots_error,
+    is_within_allowed_roots,
+    resolve_allowed_roots,
+)
 
-
-def _resolve_path(path: str, workspace: Path, allowed_dir: Path | None) -> Path:
+def _resolve_path(path: str, workspace: Path, allowed_roots: Sequence[Path]) -> Path:
     target = Path(path).expanduser()
     if not target.is_absolute():
         target = workspace / target
     resolved = target.resolve()
-    if allowed_dir is not None:
-        resolved.relative_to(allowed_dir.resolve())
+    if not is_within_allowed_roots(resolved, allowed_roots):
+        raise ValueError(path)
     return resolved
 
 
@@ -31,13 +36,17 @@ def _line_slice(content: str, offset: int = 0, limit: int | None = None) -> str:
 
 
 def create_file_tools(
-    workspace: Path | None = None,
+    workspace: Path | str,
     *,
     restrict_to_workspace: bool = True,
+    allowed_paths: Sequence[Path | str] | None = None,
 ) -> list[Tool]:
     """Create the built-in file tools bound to *workspace*."""
-    root = (workspace or Path.cwd()).expanduser().resolve()
-    allowed_dir = root if restrict_to_workspace else None
+    root, allowed_roots = resolve_allowed_roots(
+        workspace,
+        restrict_to_workspace=restrict_to_workspace,
+        allowed_paths=allowed_paths,
+    )
 
     def read_file(
         path: str,
@@ -46,9 +55,9 @@ def create_file_tools(
         limit: int | None = None,
     ) -> str:
         try:
-            file_path = _resolve_path(path, root, allowed_dir)
+            file_path = _resolve_path(path, root, allowed_roots)
         except ValueError:
-            return f"Error: path is outside the allowed workspace: {path}"
+            return allowed_roots_error(path, allowed_roots)
 
         if not file_path.exists():
             return f"Error: file not found: {path}"
@@ -65,9 +74,9 @@ def create_file_tools(
         create_dirs: bool = True,
     ) -> str:
         try:
-            file_path = _resolve_path(path, root, allowed_dir)
+            file_path = _resolve_path(path, root, allowed_roots)
         except ValueError:
-            return f"Error: path is outside the allowed workspace: {path}"
+            return allowed_roots_error(path, allowed_roots)
 
         if create_dirs:
             file_path.parent.mkdir(parents=True, exist_ok=True)
@@ -83,9 +92,9 @@ def create_file_tools(
         replace_all: bool = False,
     ) -> str:
         try:
-            file_path = _resolve_path(path, root, allowed_dir)
+            file_path = _resolve_path(path, root, allowed_roots)
         except ValueError:
-            return f"Error: path is outside the allowed workspace: {path}"
+            return allowed_roots_error(path, allowed_roots)
 
         if not file_path.exists():
             return f"Error: file not found: {path}"
@@ -121,9 +130,9 @@ def create_file_tools(
         include_hidden: bool = False,
     ) -> str:
         try:
-            dir_path = _resolve_path(path, root, allowed_dir)
+            dir_path = _resolve_path(path, root, allowed_roots)
         except ValueError:
-            return f"Error: path is outside the allowed workspace: {path}"
+            return allowed_roots_error(path, allowed_roots)
 
         if not dir_path.exists():
             return f"Error: directory not found: {path}"
@@ -144,9 +153,9 @@ def create_file_tools(
 
     def file_info(path: str) -> str:
         try:
-            target = _resolve_path(path, root, allowed_dir)
+            target = _resolve_path(path, root, allowed_roots)
         except ValueError:
-            return f"Error: path is outside the allowed workspace: {path}"
+            return allowed_roots_error(path, allowed_roots)
 
         if not target.exists():
             return f"[NOT FOUND] {path}"
@@ -217,7 +226,7 @@ def create_file_tools(
         ),
         Tool(
             name="list_directory",
-            description="List files and directories under a workspace path.",
+            description="List files and directories under the configured allowed paths.",
             parameters_schema_override={
                 "type": "object",
                 "properties": {
@@ -234,7 +243,7 @@ def create_file_tools(
         ),
         Tool(
             name="file_info",
-            description="Return basic information about a workspace file or directory.",
+            description="Return basic information about an allowed file or directory.",
             parameters_schema_override={
                 "type": "object",
                 "properties": {
