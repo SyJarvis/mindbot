@@ -17,6 +17,7 @@ Persistence strategies:
 
 from __future__ import annotations
 
+from dataclasses import asdict, is_dataclass
 from typing import TYPE_CHECKING, Literal
 
 from mindbot.context.manager import ContextManager
@@ -87,6 +88,17 @@ class PersistenceWriter:
         self._commit_memory(user_text, assistant_text)
         self._commit_journal(user_text, assistant_text, trace, session_id)
 
+    def commit_journal_turn(
+        self,
+        user_text: str,
+        assistant_text: str,
+        *,
+        session_id: str = "default",
+        trace: list[Message] | None = None,
+    ) -> None:
+        """Persist only the session journal for a completed turn."""
+        self._commit_journal(user_text, assistant_text, trace or [], session_id)
+
     # ------------------------------------------------------------------
     # Conversation context
     # ------------------------------------------------------------------
@@ -115,6 +127,8 @@ class PersistenceWriter:
         if self._tool_persistence == "full":
             for msg in messages:
                 if msg.role == "system":
+                    continue
+                if msg.role == "assistant" and not msg.tool_calls:
                     continue
                 self._ctx.add_conversation(msg)
             return
@@ -210,6 +224,27 @@ class PersistenceWriter:
                     tool_calls=tool_calls,
                     tool_call_id=m.tool_call_id,
                     reasoning_content=m.reasoning_content,
+                    turn_id=m.turn_id,
+                    iteration=m.iteration,
+                    message_kind=m.message_kind,
+                    tool_name=m.tool_name,
+                    provider=PersistenceWriter._json_safe_dict(m.provider),
+                    usage=PersistenceWriter._json_safe_dict(m.usage),
+                    finish_reason=m.finish_reason,
+                    stop_reason=m.stop_reason,
+                    is_meta=m.is_meta or None,
+                    error=m.error,
                 )
             )
         return result
+
+    @staticmethod
+    def _json_safe_dict(value: object | None) -> dict | None:
+        """Convert dataclass-like metadata into plain dicts for JSONL."""
+        if value is None:
+            return None
+        if isinstance(value, dict):
+            return dict(value)
+        if is_dataclass(value):
+            return asdict(value)
+        return None

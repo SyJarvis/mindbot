@@ -32,7 +32,7 @@ class OpenAIProvider(Provider):
 
     def __init__(self, param: OpenAIProviderParam) -> None:
         self._param = param
-        client_kwargs: dict[str, Any] = {}
+        client_kwargs: dict[str, Any] = {"timeout": param.timeout}
         if param.api_key:
             client_kwargs["api_key"] = param.api_key
         if param.base_url:

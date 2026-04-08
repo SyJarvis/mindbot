@@ -3,7 +3,7 @@
 MindAgent acts as a Supervisor that:
 * Creates and owns a *main Agent* which handles conversation, tools, and memory.
 * Maintains a registry of named *child Agents* for sub-task delegation.
-* Writes an optional append-only Session Journal after each turn.
+* Wires an optional append-only Session Journal into the shared persistence path.
 * Keeps the same public API as before, so existing channels (CLI, HTTP,
   Feishu …) and the MindBot wrapper do not need changes.
 """
@@ -18,14 +18,11 @@ from mindbot.agent.models import AgentEvent, AgentResponse, StopReason, TurnResu
 from mindbot.builders import create_agent, create_llm
 from mindbot.capability.backends.tooling import ToolRegistry
 from mindbot.config.schema import Config
-from mindbot.context.models import Message
 from mindbot.memory import MemoryManager
 from mindbot.session import SessionJournal
-from mindbot.session.types import SessionMessage
 from mindbot.utils import get_logger
 
 if TYPE_CHECKING:
-    from mindbot.agent.persistence_writer import PersistenceWriter as _PersistenceWriter
     from mindbot.capability.facade import CapabilityFacade
 
 logger = get_logger("agent.core")
@@ -69,7 +66,7 @@ class MindAgent:
         if config.session_journal.enabled:
             self._journal = SessionJournal(config.session_journal.path)
             logger.info("Session journal enabled at %s", config.session_journal.path)
-        self._journal_sessions: set[str] = set()
+        self._main_agent.set_session_journal(self._journal)
 
     # ------------------------------------------------------------------
     # Internal factory
@@ -162,84 +159,8 @@ class MindAgent:
         return self._main_agent.has_tool(tool_name)
 
     # ------------------------------------------------------------------
-    # Session Journal helpers
-    # ------------------------------------------------------------------
-
-    @staticmethod
-    def _msgs_to_journal(msgs: list[Message]) -> list[SessionMessage]:
-        result: list[SessionMessage] = []
-        for m in msgs:
-            tool_calls = None
-            if m.tool_calls:
-                tool_calls = [
-                    {"id": tc.id, "name": tc.name, "arguments": tc.arguments}
-                    for tc in m.tool_calls
-                ]
-            result.append(SessionMessage(
-                role=m.role,
-                content=m.text,
-                timestamp=m.timestamp,
-                tool_calls=tool_calls,
-                tool_call_id=m.tool_call_id,
-                reasoning_content=m.reasoning_content,
-            ))
-        return result
-
-    def _write_journal(
-        self,
-        session_id: str,
-        user_message: str,
-        assistant_content: str,
-        trace: list[Message] | None = None,
-    ) -> None:
-        """Persist the current turn to the journal (if enabled)."""
-        if self._journal is None:
-            return
-
-        entries: list[SessionMessage] = []
-
-        if session_id not in self._journal_sessions:
-            system_prompt = self.config.agent.system_prompt
-            if system_prompt:
-                entries.append(SessionMessage(role="system", content=system_prompt))
-            self._journal_sessions.add(session_id)
-
-        entries.append(SessionMessage(role="user", content=user_message))
-
-        if trace:
-            entries.extend(self._msgs_to_journal(trace))
-
-        # The authoritative trace already includes the final assistant
-        # message when produced by TurnEngine.  Only append an explicit
-        # assistant entry when there is no trace (e.g. streaming mode).
-        trace_has_final = (
-            trace
-            and trace[-1].role == "assistant"
-            and not trace[-1].tool_calls
-        )
-        if not trace_has_final:
-            entries.append(SessionMessage(role="assistant", content=assistant_content))
-
-        self._journal.append(session_id, entries)
-
-    # ------------------------------------------------------------------
     # Chat interfaces
     # ------------------------------------------------------------------
-
-    def _get_journal_writer(self, session_id: str) -> "_PersistenceWriter | None":
-        """Return a writer that handles journal-only persistence for this session."""
-        if self._journal is None:
-            return None
-        from mindbot.agent.persistence_writer import PersistenceWriter
-
-        ctx = self._main_agent._get_session_context(session_id)
-        writer = PersistenceWriter(
-            context=ctx,
-            journal=self._journal,
-            system_prompt=self.config.agent.system_prompt,
-        )
-        writer._journal_sessions = self._journal_sessions
-        return writer
 
     async def chat(
         self,
@@ -250,7 +171,7 @@ class MindAgent:
     ) -> AgentResponse:
         """Primary async chat entry point.
 
-        Delegates execution to the main Agent, then writes the session journal.
+        Delegates execution to the main Agent, which persists the full turn.
 
         Args:
             message: User message.
@@ -268,13 +189,6 @@ class MindAgent:
             tools=tools,
         )
 
-        self._write_journal(
-            session_id,
-            user_message=message,
-            assistant_content=response.content or "",
-            trace=response.message_trace or None,
-        )
-
         logger.info(
             "chat: session=%s stop_reason=%s",
             session_id,
@@ -290,22 +204,18 @@ class MindAgent:
     ) -> AsyncIterator[str]:
         """Primary async streaming chat entry point.
 
-        Delegates to the main Agent and writes the journal after the stream
-        completes.
+        Delegates to the main Agent, which persists the full turn before the
+        final response chunks are yielded.
 
         Yields:
             String chunks of the assistant response.
         """
-        full_content = ""
         async for chunk in self._main_agent.chat_stream(
             message=message,
             session_id=session_id,
             tools=tools,
         ):
-            full_content += chunk
             yield chunk
-
-        self._write_journal(session_id, user_message=message, assistant_content=full_content)
 
     # ------------------------------------------------------------------
     # Memory interfaces

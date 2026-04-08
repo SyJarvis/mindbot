@@ -22,6 +22,16 @@ class SessionMessage:
     tool_calls: list[dict[str, Any]] | None = None
     tool_call_id: str | None = None
     reasoning_content: str | None = None
+    turn_id: str | None = None
+    iteration: int | None = None
+    message_kind: str | None = None
+    tool_name: str | None = None
+    provider: dict[str, Any] | None = None
+    usage: dict[str, Any] | None = None
+    finish_reason: str | None = None
+    stop_reason: str | None = None
+    is_meta: bool | None = None
+    error: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Serialise to a plain dict, dropping *None* values for compactness."""
