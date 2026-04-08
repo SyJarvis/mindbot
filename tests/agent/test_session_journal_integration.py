@@ -149,6 +149,7 @@ async def test_chat_writes_system_user_assistant(tmp_path):
     assert msgs[2].message_kind == "assistant_text"
     assert msgs[2].stop_reason == "completed"
     assert msgs[2].turn_id is not None
+    assert msgs[1].timestamp <= msgs[2].timestamp
 
 
 @pytest.mark.anyio
@@ -222,6 +223,7 @@ async def test_chat_stream_writes_journal(tmp_path):
     assert msgs[2].message_kind == "assistant_text"
     assert msgs[2].stop_reason == "completed"
     assert msgs[2].turn_id is not None
+    assert msgs[1].timestamp <= msgs[2].timestamp
 
 
 # ---------------------------------------------------------------------------
@@ -247,6 +249,38 @@ async def test_chat_and_stream_produce_same_roles(tmp_path):
     stream_roles = [m.role for m in stream_msgs]
     assert chat_roles == stream_roles
     assert chat_msgs[-1].message_kind == stream_msgs[-1].message_kind == "assistant_text"
+
+
+@pytest.mark.anyio
+async def test_tool_call_preamble_is_not_mixed_into_final_assistant(tmp_path):
+    config = _make_config(tmp_path)
+
+    class PreambleToolLLM(FakeLLM):
+        async def chat(
+            self,
+            messages: list[Message],
+            model: str | None = None,
+            tools: list[Any] | None = None,
+            **kwargs: Any,
+        ) -> ChatResponse:
+            self._call_count += 1
+            if self._call_count == 1:
+                return ChatResponse(
+                    content="让我先检查一下。",
+                    tool_calls=[ToolCall(id="tc1", name="test_tool", arguments={})],
+                    finish_reason=FinishReason.TOOL_CALLS,
+                )
+            return ChatResponse(content="最终答案", finish_reason=FinishReason.STOP)
+
+    fake_llm = PreambleToolLLM()
+    agent = _make_agent(config, fake_llm=fake_llm)
+
+    await agent.chat("检查一下", session_id="s1")
+
+    journal = SessionJournal(tmp_path / "journal")
+    msgs = journal.read("s1")
+    assert msgs[-1].role == "assistant"
+    assert msgs[-1].content == "最终答案"
 
 
 # ---------------------------------------------------------------------------

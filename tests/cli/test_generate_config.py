@@ -50,9 +50,12 @@ def test_generate_config_creates_files(tmp_path, monkeypatch):
     assert (root / "memory").is_dir()
     assert (root / "history").is_dir()
     assert (root / "cron").is_dir()
+    assert (root / "workspace").is_dir()
 
     settings_content = (root / "settings.json").read_text(encoding="utf-8")
     assert "agent" in settings_content
+    assert '"workspace": "~/.mindbot/workspace"' in settings_content
+    assert '"system_path_whitelist"' in settings_content
 
     system_content = (root / "SYSTEM.md").read_text(encoding="utf-8")
     assert len(system_content) > 0
