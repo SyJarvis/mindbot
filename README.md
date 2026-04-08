@@ -1,6 +1,6 @@
 # MindBot
 
-[![Version](https://img.shields.io/badge/Version-0.2.0-blue.svg)](https://github.com/your-org/mindbot)
+[![Version](https://img.shields.io/badge/Version-0.3.1-blue.svg)](https://github.com/your-org/mindbot)
 [![Python](https://img.shields.io/badge/Python-3.10+-blue?logo=python)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
@@ -17,12 +17,13 @@
 | 统一入口 | `AgentOrchestrator` 自主决策，无需预选模式 |
 | 流式响应 | 实时事件流，用户可看到 Agent 思考过程 |
 | 工具确认 | 多级安全确认机制（安全级别、白名单、危险工具检测）|
+| 路径安全 | 工作空间隔离 + 系统路径白名单，防止越权访问 |
 | 智能路由 | 根据内容类型/复杂度/关键词自动选择模型 |
 | 多 Provider | OpenAI / Ollama / Transformers / llama.cpp |
 | 可中断执行 | 用户可随时中止 Agent 运行 |
 | 记忆系统 | 短期/长期记忆，向量检索，自动归档 |
 | Skills 机制 | `SKILL.md` 技能包按需注入 prompt，默认摘要、命中后展开正文 |
-| 上下文管理 | Token 预算管理，自动压缩 |
+| 上下文管理 | Token 预算管理，自动压缩，工具持久化策略（none/summary/full）|
 | 多通道支持 | CLI、HTTP、飞书、Telegram |
 | 对话追踪 | Tracer 记录完整对话日志 |
 
@@ -113,7 +114,11 @@ mindbot generate-config
     "model": "local-ollama/qwen3",
     "temperature": 0.7,
     "max_tokens": 8192,
-    "max_tool_iterations": 20
+    "max_tool_iterations": 20,
+    "workspace": "~/.mindbot/workspace",
+    "system_path_whitelist": ["~/.mindbot"],
+    "restrict_to_workspace": true,
+    "tool_persistence": "none"
   },
 
   // 动态路由
@@ -175,6 +180,19 @@ mindbot generate-config
 ```
 
 > **注意**：YAML 配置格式已弃用，请使用 JSON/JSONC 格式。可使用 `mindbot config migrate` 迁移旧配置。
+
+### Agent 配置项说明
+
+| 配置项 | 类型 | 默认值 | 说明 |
+|--------|------|--------|------|
+| `model` | string | `"local-ollama/qwen3.5:2b"` | 默认模型，格式 `instance/model` |
+| `workspace` | string | `"~/.mindbot/workspace"` | 内置文件/Shell 工具的工作空间根目录 |
+| `system_path_whitelist` | list | `["~/.mindbot"]` | 额外允许的系统路径白名单 |
+| `restrict_to_workspace` | bool | `true` | 是否将工具限制在工作空间和白名单内 |
+| `tool_persistence` | string | `"none"` | 工具消息持久化策略：`none`/`summary`/`full` |
+| `max_tool_iterations` | int | `20` | 单轮最大工具迭代次数 |
+| `temperature` | float | `0.7` | LLM 温度参数 |
+| `max_tokens` | int | `8192` | 最大生成 token 数 |
 
 ### 3.1 Skills 机制
 
@@ -322,6 +340,7 @@ AssistantResponse
 | Context | `context/` | 上下文管理 |
 | Memory | `memory/` | 记忆系统 |
 | Capability Tooling | `capability/backends/tooling/` | 工具注册与执行 |
+| Tools | `tools/` | 内置工具（文件/Shell/运行时）|
 | Channels | `channels/` | 多通道支持 |
 | Config | `config/` | 配置管理（JSON/JSONC）|
 | Session | `session/` | 会话日志与类型 |
@@ -414,6 +433,44 @@ AssistantResponse
   }
 }
 ```
+
+## 路径安全策略
+
+MindBot 内置的文件和 Shell 工具采用**工作空间隔离**机制：
+
+- **workspace**: 默认工作目录，所有相对路径以此解析
+- **restrict_to_workspace**: 启用时，工具只能访问 workspace 和 system_path_whitelist 中的路径
+- **system_path_whitelist**: 额外允许访问的系统路径列表（如 `~/.mindbot`）
+
+### 路径安全示例
+
+```jsonc
+{
+  "agent": {
+    "workspace": "~/.mindbot/workspace",
+    "system_path_whitelist": ["~/.mindbot", "/tmp"],
+    "restrict_to_workspace": true
+  }
+}
+```
+
+**安全规则**:
+- 绝对路径必须落在允许范围内
+- 相对路径基于 workspace 解析
+- 超出范围的路径返回策略错误
+
+## 内置工具
+
+| 工具 | 类别 | 说明 |
+|------|------|------|
+| `read_file` | 文件 | 读取文件，支持 offset/limit 分页 |
+| `write_file` | 文件 | 写入文件，自动创建父目录 |
+| `edit_file` | 文件 | 精确文本替换，支持 replace_all |
+| `list_directory` | 文件 | 列出目录内容，支持 glob 模式 |
+| `file_info` | 文件 | 获取文件/目录基本信息 |
+| `exec_command` | Shell | 执行命令，带超时和安全检查 |
+| `get_mindbot_runtime_info` | 系统 | 获取运行时配置、内存、日志等状态 |
+| `web_search` | Web | 网络搜索（需配置 Provider）|
 
 ## LLM Provider
 
@@ -514,6 +571,7 @@ AssistantResponse
 ├── skills/               # 自定义技能
 ├── memory/               # Markdown 记忆存储
 ├── history/              # CLI 历史记录
+├── workspace/            # 默认工作空间
 ├── data/
 │   ├── memory.db         # 记忆数据库
 │   └── journal/          # 会话记录
@@ -541,7 +599,9 @@ mindbot/
 │   ├── multimodal/       # 多模态支持
 │   ├── cron/             # 定时任务
 │   ├── config/           # 配置模型与加载（JSON/JSONC）
-│   └── cli/              # CLI 命令实现
+│   ├── cli/              # CLI 命令实现
+│   ├── tools/            # 内置工具（文件/Shell/运行时）
+│   └── utils/            # 工具函数
 ├── docs/                 # 文档
 ├── tests/                # 测试
 ├── examples/             # 示例代码
