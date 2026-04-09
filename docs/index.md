@@ -16,6 +16,8 @@
 | [:material-brain: 架构概览](architecture/overview.md) | 五层架构与执行流程详解 |
 | [:material-cog: 配置参考](configuration/index.md) | Provider、路由、安全、通道配置 |
 | [:material-code-braces: 示例代码](guide/examples.md) | 11 个从简到难的示例讲解 |
+| [:material-speedometer: Benchmark 启动](testing/toolcall15.md) | ToolCall-15 的启动步骤、自检命令和基线记录方式 |
+| [:material-hammer-wrench: Real Tools Benchmark](testing/real-tools.md) | 真实文件、Shell、HTTP 工具执行 benchmark |
 
 ---
 
@@ -26,7 +28,7 @@
 | **统一入口** | `AgentOrchestrator` 自主决策，无需预选模式 |
 | **流式响应** | 实时事件流，用户可看到 Agent 思考过程 |
 | **工具确认** | 多级安全确认机制（安全级别、白名单、危险工具检测）|
-| **路径安全** | 工作空间隔离 + 系统路径白名单，防止越权访问 |
+| **路径安全** | 文件工具路径策略 + Shell 执行边界控制，降低越权风险 |
 | **智能路由** | 根据内容类型/复杂度/关键词自动选择模型 |
 | **多 Provider** | OpenAI / Ollama / Transformers / llama.cpp |
 | **记忆系统** | 短期/长期记忆，向量检索，自动归档 |

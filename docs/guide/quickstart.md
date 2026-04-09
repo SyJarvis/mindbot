@@ -85,7 +85,13 @@ mindbot generate-config
     "max_tool_iterations": 20,
     "workspace": "~/.mindbot/workspace",
     "system_path_whitelist": ["~/.mindbot"],
+    "trusted_paths": [],
     "restrict_to_workspace": true,
+    "shell_execution": {
+      "policy": "cwd_guard",
+      "sandbox_provider": "none",
+      "fail_if_unavailable": false
+    },
     "tool_persistence": "none"
   },
 
@@ -153,8 +159,12 @@ mindbot generate-config
 |--------|------|--------|------|
 | `model` | string | `"local-ollama/qwen3.5:2b"` | 默认模型，格式 `instance/model` |
 | `workspace` | string | `"~/.mindbot/workspace"` | 内置文件/Shell 工具的工作空间根目录 |
-| `system_path_whitelist` | list | `["~/.mindbot"]` | 额外允许的系统路径白名单 |
-| `restrict_to_workspace` | bool | `true` | 是否将工具限制在工作空间和白名单内 |
+| `system_path_whitelist` | list | `["~/.mindbot"]` | 额外允许的系统路径根目录白名单，目录树会递归放行 |
+| `trusted_paths` | list | `[]` | 用户显式信任的目录根；shell 会话可在授权后把这些目录当作默认当前目录 |
+| `restrict_to_workspace` | bool | `true` | 是否将工具限制在工作空间和允许根目录内 |
+| `shell_execution.policy` | string | `"cwd_guard"` | Shell 执行策略；v0.3 默认只做 `working_dir` 与危险命令检查 |
+| `shell_execution.sandbox_provider` | string | `"none"` | 预留的 Shell 沙箱后端 |
+| `shell_execution.fail_if_unavailable` | bool | `false` | 未来 `sandboxed` 模式下，沙箱不可用时是否失败关闭 |
 | `tool_persistence` | string | `"none"` | 工具消息持久化策略：`none` / `summary` / `full` |
 | `max_tool_iterations` | int | `20` | 单轮最大工具迭代次数 |
 | `temperature` | float | `0.7` | LLM 温度参数 |

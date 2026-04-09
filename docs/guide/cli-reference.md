@@ -18,6 +18,7 @@ mindbot <command> [options]
 |------|------|
 | `mindbot generate-config` | 初始化默认配置（别名: `onboard`） |
 | `mindbot serve` | 启动服务（多通道） |
+| `mindbot toolcall15-adapter` | 启动 ToolCall-15 的 OpenAI-compatible 适配器 |
 | `mindbot shell` | 进入交互式 Shell |
 | `mindbot chat` | 发送单条消息 |
 | `mindbot status` | 显示状态 |
@@ -69,6 +70,24 @@ mindbot serve -v
 
 ```bash
 mindbot shell
+```
+
+### toolcall15-adapter
+
+启动一个最小的 OpenAI-compatible `/v1/chat/completions` 适配器，供 `benchmark/ToolCall-15` 调用。
+
+```bash
+mindbot toolcall15-adapter --host 127.0.0.1 --port 11435 --model local-ollama/qwen3
+```
+
+常见用法：
+
+```bash
+# 使用默认 ~/.mindbot/settings.json
+mindbot toolcall15-adapter --model local-ollama/qwen3
+
+# 指定配置文件
+mindbot toolcall15-adapter --config-path /path/to/settings.json --model moonshot/kimi-k2.5
 ```
 
 ### chat
