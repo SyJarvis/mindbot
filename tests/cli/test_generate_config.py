@@ -56,6 +56,8 @@ def test_generate_config_creates_files(tmp_path, monkeypatch):
     assert "agent" in settings_content
     assert '"workspace": "~/.mindbot/workspace"' in settings_content
     assert '"system_path_whitelist"' in settings_content
+    assert '"trusted_paths"' in settings_content
+    assert '"shell_execution"' in settings_content
 
     system_content = (root / "SYSTEM.md").read_text(encoding="utf-8")
     assert len(system_content) > 0

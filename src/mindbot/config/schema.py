@@ -31,6 +31,20 @@ class ToolAskMode(str, Enum):
     ALWAYS = "always"       # Always ask for approval
 
 
+class ShellExecutionPolicy(str, Enum):
+    """How builtin shell commands are bounded at runtime."""
+
+    CWD_GUARD = "cwd_guard"
+    SANDBOXED = "sandboxed"
+
+
+class ShellSandboxProvider(str, Enum):
+    """Reserved OS-level sandbox backends for future shell isolation."""
+
+    NONE = "none"
+    BUBBLEWRAP = "bubblewrap"
+
+
 class ModelConfig(BaseModel):
     """Capability declaration for a specific model.
 
@@ -289,22 +303,54 @@ class ToolPersistenceStrategy(str, Enum):
     FULL = "full"
 
 
+class ShellExecutionConfig(BaseModel):
+    """Configuration for builtin shell command boundaries."""
+
+    policy: ShellExecutionPolicy = Field(
+        default=ShellExecutionPolicy.CWD_GUARD,
+        description=(
+            "Shell execution boundary. 'cwd_guard' validates the working directory and "
+            "applies lightweight command safety checks. 'sandboxed' is reserved for a "
+            "future OS-level shell sandbox."
+        ),
+    )
+    sandbox_provider: ShellSandboxProvider = Field(
+        default=ShellSandboxProvider.NONE,
+        description="Reserved sandbox backend for future shell isolation.",
+    )
+    fail_if_unavailable: bool = Field(
+        default=False,
+        description=(
+            "When policy='sandboxed', fail instead of falling back if the requested sandbox "
+            "backend is unavailable."
+        ),
+    )
+
+
 class AgentConfig(BaseModel):
     """Agent behaviour settings."""
 
     model: str = "local-ollama/qwen3.5:2b"
     workspace: str = Field(
         default="~/.mindbot/workspace",
-        description="Default workspace root for builtin file and shell tools.",
+        description="Default workspace root for builtin file tools and the shell launch directory.",
     )
     system_path_whitelist: list[str] = Field(
         default_factory=lambda: ["~/.mindbot"],
-        description="Additional allowed system paths for builtin file and shell tools.",
+        description="Additional allowed root directories for builtin file tools and shell working_dir checks.",
+    )
+    trusted_paths: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Persistently trusted directory roots that shell sessions may adopt as their "
+            "default current directory after explicit user approval."
+        ),
     )
     restrict_to_workspace: bool = Field(
         default=True,
-        description="Restrict builtin file and shell tools to the configured workspace and allowed system paths.",
+        description="Restrict builtin file tools to the configured workspace and allowed system paths.",
     )
+    shell_execution: ShellExecutionConfig = Field(default_factory=ShellExecutionConfig)
     max_tokens: int = 8192
     temperature: float = Field(default=0.7, ge=0.0, le=2.0)
     max_tool_iterations: int = 20
