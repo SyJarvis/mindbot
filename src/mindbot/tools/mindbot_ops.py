@@ -97,6 +97,10 @@ def create_mindbot_tools(
     *,
     restrict_to_workspace: bool = True,
     allowed_paths: Sequence[Path | str] | None = None,
+    session_cwd: Path | str | None = None,
+    effective_workspace: Path | str | None = None,
+    session_trusted_paths: Sequence[Path | str] | None = None,
+    session_cwd_authorized: bool | None = None,
 ) -> list[Tool]:
     """Create MindBot-specific built-in inspection tools."""
     root, allowed_roots = resolve_allowed_roots(
@@ -159,7 +163,15 @@ def create_mindbot_tools(
                     "system_path_whitelist": [
                         str(Path(path).expanduser()) for path in config.agent.system_path_whitelist
                     ],
+                    "trusted_paths": [
+                        str(Path(path).expanduser()) for path in config.agent.trusted_paths
+                    ],
                     "restrict_to_workspace": config.agent.restrict_to_workspace,
+                    "shell_execution": {
+                        "policy": config.agent.shell_execution.policy.value,
+                        "sandbox_provider": config.agent.shell_execution.sandbox_provider.value,
+                        "fail_if_unavailable": config.agent.shell_execution.fail_if_unavailable,
+                    },
                     "provider_instances": [
                         {"name": name, "type": provider.type}
                         for name, provider in config.providers.items()
@@ -194,7 +206,26 @@ def create_mindbot_tools(
                 "platform": platform.platform(),
                 "python_version": platform.python_version(),
                 "workspace": str(root),
+                "effective_workspace": (
+                    str(Path(effective_workspace).expanduser().resolve())
+                    if effective_workspace is not None
+                    else str(root)
+                ),
+                "session_cwd": (
+                    str(Path(session_cwd).expanduser().resolve())
+                    if session_cwd is not None
+                    else None
+                ),
+                "session_cwd_authorized": session_cwd_authorized,
+                "session_trusted_paths": [
+                    str(Path(path).expanduser().resolve()) for path in (session_trusted_paths or [])
+                ],
                 "allowed_paths": [str(path) for path in allowed_roots],
+                "allowed_path_policy": "Each allowed path grants access to that directory tree.",
+                "shell_execution_boundary": (
+                    "cwd_guard validates the launch directory and dangerous command patterns, "
+                    "but does not provide OS-level shell sandboxing."
+                ),
                 "cpu_count": os.cpu_count(),
                 "memory_total_bytes": _memory_total_bytes(),
                 "memory_available_bytes": _memory_available_bytes(),
@@ -209,7 +240,7 @@ def create_mindbot_tools(
             name="get_mindbot_runtime_info",
             description=(
                 "Return structured runtime information about MindBot, including config, "
-                "memory, journal, loaded skills, and basic system resources."
+                "memory, journal, loaded skills, basic system resources, and allowed path roots."
             ),
             parameters_schema_override={
                 "type": "object",

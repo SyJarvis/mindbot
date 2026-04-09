@@ -17,7 +17,7 @@
 | 统一入口 | `AgentOrchestrator` 自主决策，无需预选模式 |
 | 流式响应 | 实时事件流，用户可看到 Agent 思考过程 |
 | 工具确认 | 多级安全确认机制（安全级别、白名单、危险工具检测）|
-| 路径安全 | 工作空间隔离 + 系统路径白名单，防止越权访问 |
+| 路径安全 | 文件工具路径策略 + Shell 执行边界控制，降低越权风险 |
 | 智能路由 | 根据内容类型/复杂度/关键词自动选择模型 |
 | 多 Provider | OpenAI / Ollama / Transformers / llama.cpp |
 | 可中断执行 | 用户可随时中止 Agent 运行 |
@@ -92,7 +92,7 @@ mindbot generate-config
       ]
     },
 
-    // Moonshot（OpenAI 兼容）
+    // OpenAI 兼容
     "moonshot": {
       "type": "openai",
       "strategy": "priority",
@@ -117,7 +117,13 @@ mindbot generate-config
     "max_tool_iterations": 20,
     "workspace": "~/.mindbot/workspace",
     "system_path_whitelist": ["~/.mindbot"],
+    "trusted_paths": [],
     "restrict_to_workspace": true,
+    "shell_execution": {
+      "policy": "cwd_guard",
+      "sandbox_provider": "none",
+      "fail_if_unavailable": false
+    },
     "tool_persistence": "none"
   },
 
@@ -187,8 +193,12 @@ mindbot generate-config
 |--------|------|--------|------|
 | `model` | string | `"local-ollama/qwen3.5:2b"` | 默认模型，格式 `instance/model` |
 | `workspace` | string | `"~/.mindbot/workspace"` | 内置文件/Shell 工具的工作空间根目录 |
-| `system_path_whitelist` | list | `["~/.mindbot"]` | 额外允许的系统路径白名单 |
-| `restrict_to_workspace` | bool | `true` | 是否将工具限制在工作空间和白名单内 |
+| `system_path_whitelist` | list | `["~/.mindbot"]` | 额外允许的系统路径根目录白名单，白名单目录下的子树也允许访问 |
+| `trusted_paths` | list | `[]` | 用户显式信任的目录根；shell 会话可在授权后把这些目录当作默认当前目录 |
+| `restrict_to_workspace` | bool | `true` | 是否将工具限制在工作空间和允许根目录内 |
+| `shell_execution.policy` | string | `"cwd_guard"` | Shell 执行策略；`cwd_guard` 只校验启动目录与基础安全规则，`sandboxed` 预留给未来 OS 级沙箱 |
+| `shell_execution.sandbox_provider` | string | `"none"` | 预留的 Shell 沙箱后端，v0.3 默认不启用 |
+| `shell_execution.fail_if_unavailable` | bool | `false` | 未来 `sandboxed` 模式下，沙箱不可用时是否失败关闭 |
 | `tool_persistence` | string | `"none"` | 工具消息持久化策略：`none`/`summary`/`full` |
 | `max_tool_iterations` | int | `20` | 单轮最大工具迭代次数 |
 | `temperature` | float | `0.7` | LLM 温度参数 |
@@ -207,6 +217,48 @@ mindbot generate-config
 ```bash
 mindbot config validate
 ```
+
+## Benchmark
+
+当前推荐的 `MindBot v1 benchmark` 是 `ToolCall-15`。
+
+如果你想直接启动 benchmark，可按下面最短路径执行：
+
+```bash
+# 终端 1
+mindbot toolcall15-adapter --host 127.0.0.1 --port 11435 --model local-ollama/qwen3
+
+# 终端 2
+cd benchmark/ToolCall-15
+cp .env.example .env
+```
+
+`.env` 示例：
+
+```env
+LMSTUDIO_HOST=http://127.0.0.1:11435
+LLM_MODELS=lmstudio:local-ollama/qwen3
+MODEL_REQUEST_TIMEOUT_SECONDS=30
+```
+
+然后执行：
+
+```bash
+npm install
+npm run dev
+```
+
+浏览器打开 `http://localhost:3000` 即可开始跑 benchmark。
+
+完整说明见 `docs/testing/toolcall15.md`。
+
+第二阶段 benchmark 是 `real-tools`，用于验证 MindBot 是否真的执行了内置文件、Shell 和本地 HTTP 工具：
+
+```bash
+python benchmark/real-tools/runner.py --config-path ~/.mindbot/settings.json --model gpt-backup/glm-5
+```
+
+完整说明见 `docs/testing/real-tools.md` 和 `benchmark/real-tools/README.md`。
 
 ### 5. 基本使用
 
@@ -436,11 +488,13 @@ AssistantResponse
 
 ## 路径安全策略
 
-MindBot 内置的文件和 Shell 工具采用**工作空间隔离**机制：
+MindBot v0.3 将“文件路径策略”和“Shell 执行边界”分开描述：
 
 - **workspace**: 默认工作目录，所有相对路径以此解析
-- **restrict_to_workspace**: 启用时，工具只能访问 workspace 和 system_path_whitelist 中的路径
-- **system_path_whitelist**: 额外允许访问的系统路径列表（如 `~/.mindbot`）
+- **restrict_to_workspace**: 启用时，文件工具只能在 `workspace` 和 `system_path_whitelist` 定义的允许根目录内运行
+- **system_path_whitelist**: 额外允许访问的系统路径根目录列表（如 `~/.mindbot`），每个根目录都会递归覆盖其子目录和文件
+- **trusted_paths**: 用户显式授权过的目录根；当 `mindbot shell` 从这些目录启动时，文件工具和 shell 可优先把它们作为默认当前目录
+- **shell_execution.policy**: Shell 的独立执行策略；默认 `cwd_guard` 只校验 `working_dir` 和危险命令模式，不是 OS 级沙箱
 
 ### 路径安全示例
 
@@ -449,7 +503,13 @@ MindBot 内置的文件和 Shell 工具采用**工作空间隔离**机制：
   "agent": {
     "workspace": "~/.mindbot/workspace",
     "system_path_whitelist": ["~/.mindbot", "/tmp"],
-    "restrict_to_workspace": true
+    "trusted_paths": ["/root/research/mindbot"],
+    "restrict_to_workspace": true,
+    "shell_execution": {
+      "policy": "cwd_guard",
+      "sandbox_provider": "none",
+      "fail_if_unavailable": false
+    }
   }
 }
 ```
@@ -457,6 +517,11 @@ MindBot 内置的文件和 Shell 工具采用**工作空间隔离**机制：
 **安全规则**:
 - 绝对路径必须落在允许范围内
 - 相对路径基于 workspace 解析
+- 允许根目录按目录树递归生效
+- `mindbot shell` 启动目录会被记录为当前会话目录；若该目录未被信任，CLI 会先要求用户授权再将其作为默认目录
+- 文件工具的路径检查适用于读、写、编辑、列目录等内置文件操作
+- Shell 的 `cwd_guard` 模式只校验 `working_dir` 是否落在允许根目录内，并应用轻量危险命令检查
+- `cwd_guard` 不是 OS 级文件系统沙箱；shell 子进程不会自动获得像 Claude Code Bash sandbox 那样的强隔离
 - 超出范围的路径返回策略错误
 
 ## 内置工具

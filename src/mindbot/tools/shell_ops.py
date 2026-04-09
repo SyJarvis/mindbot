@@ -20,15 +20,33 @@ _DANGEROUS_PATTERNS = [
     r">\s*/dev/",
 ]
 
+_SUPPORTED_EXECUTION_POLICIES = {"cwd_guard", "sandboxed"}
+
+
+def _shell_policy_description(execution_policy: str) -> str:
+    if execution_policy == "sandboxed":
+        return (
+            "Execute a shell command with a future OS-level sandbox policy. "
+            "MindBot v0.3 does not yet ship that sandbox runtime."
+        )
+    return (
+        "Execute a shell command from the configured workspace or other allowed root "
+        "directories. In cwd_guard mode, MindBot validates working_dir and applies "
+        "lightweight safety checks, but does not provide OS-level filesystem sandboxing."
+    )
+
 
 def create_shell_tools(
     workspace: Path | str,
     *,
     restrict_to_workspace: bool = True,
     allowed_paths: Sequence[Path | str] | None = None,
+    execution_policy: str = "cwd_guard",
+    sandbox_provider: str = "none",
+    fail_if_unavailable: bool = False,
     default_timeout: int = 30,
 ) -> list[Tool]:
-    """Create shell tools bound to *workspace*."""
+    """Create shell tools bound to allowed root directories and their subtrees."""
     root, allowed_roots = resolve_allowed_roots(
         workspace,
         restrict_to_workspace=restrict_to_workspace,
@@ -41,6 +59,17 @@ def create_shell_tools(
         working_dir: str | None = None,
         capture_stderr: bool = True,
     ) -> str:
+        if execution_policy not in _SUPPORTED_EXECUTION_POLICIES:
+            return f"Error: unsupported shell execution policy: {execution_policy}"
+        if execution_policy == "sandboxed":
+            provider = sandbox_provider or "none"
+            fail_text = "true" if fail_if_unavailable else "false"
+            return (
+                "Error: shell execution policy 'sandboxed' is configured, but MindBot v0.3 "
+                "does not yet provide an OS-level shell sandbox. "
+                f"provider={provider}, fail_if_unavailable={fail_text}"
+            )
+
         command = command.strip()
         if not command:
             return "Error: command must not be empty"
@@ -65,9 +94,6 @@ def create_shell_tools(
                     )
             except OSError as exc:
                 return f"Error: invalid working_dir: {exc}"
-
-        if restrict_to_workspace and ("../" in command or "..\\" in command):
-            return "Error: command blocked due to path traversal"
 
         if cwd == root and not cwd.exists():
             cwd.mkdir(parents=True, exist_ok=True)
@@ -105,7 +131,7 @@ def create_shell_tools(
     return [
         Tool(
             name="exec_command",
-            description="Execute a shell command inside the configured allowed paths with timeout and safety checks.",
+            description=_shell_policy_description(execution_policy),
             parameters_schema_override={
                 "type": "object",
                 "properties": {
@@ -117,7 +143,11 @@ def create_shell_tools(
                     },
                     "working_dir": {
                         "type": "string",
-                        "description": "Optional working directory. Relative paths resolve under the configured workspace.",
+                        "description": (
+                            "Optional working directory. Relative paths resolve under the configured "
+                            "workspace, and absolute paths must stay within an allowed root directory. "
+                            "This checks the launch directory only and is not an OS-level sandbox."
+                        ),
                     },
                     "capture_stderr": {
                         "type": "boolean",

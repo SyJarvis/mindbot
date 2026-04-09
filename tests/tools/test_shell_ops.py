@@ -16,8 +16,13 @@ def _tool_map(
     workspace: Path,
     *,
     allowed_paths: list[Path | str] | None = None,
+    execution_policy: str = "cwd_guard",
 ) -> dict[str, object]:
-    tools = create_shell_tools(workspace, allowed_paths=allowed_paths)
+    tools = create_shell_tools(
+        workspace,
+        allowed_paths=allowed_paths,
+        execution_policy=execution_policy,
+    )
     return {tool.name: tool for tool in tools}
 
 
@@ -58,3 +63,26 @@ async def test_exec_command_uses_workspace_as_default_cwd(tmp_path: Path) -> Non
     result = await tools["exec_command"].handler("pwd")  # type: ignore[union-attr]
 
     assert str(workspace) in result
+
+
+@pytest.mark.anyio
+async def test_exec_command_allows_parent_navigation_within_allowed_tree(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    nested = workspace / "nested" / "child"
+    nested.mkdir(parents=True)
+    tools = _tool_map(workspace)
+
+    result = await tools["exec_command"].handler("cd .. && pwd", working_dir=str(nested))  # type: ignore[union-attr]
+
+    assert str(workspace / "nested") in result
+
+
+@pytest.mark.anyio
+async def test_exec_command_reports_unimplemented_sandbox_policy(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    tools = _tool_map(workspace, execution_policy="sandboxed")
+
+    result = await tools["exec_command"].handler("pwd")  # type: ignore[union-attr]
+
+    assert "does not yet provide an OS-level shell sandbox" in result

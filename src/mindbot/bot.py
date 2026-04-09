@@ -152,6 +152,10 @@ class MindBot:
         """Greeting message."""
         return "你好！我是 MindBot，有什么可以帮你的吗？"
 
+    def list_tools(self) -> list[Any]:
+        """Return the tools currently registered on the main agent."""
+        return self._agent.list_tools()
+
     # ==================================================================
     # Runtime model switching
     # ==================================================================

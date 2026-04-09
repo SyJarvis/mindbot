@@ -114,7 +114,10 @@ def create_agent(
         builtin_tools = create_builtin_tools(
             config.agent.workspace,
             restrict_to_workspace=config.agent.restrict_to_workspace,
-            allowed_paths=config.agent.system_path_whitelist,
+            allowed_paths=[*config.agent.system_path_whitelist, *config.agent.trusted_paths],
+            shell_execution_mode=config.agent.shell_execution.policy.value,
+            shell_sandbox_provider=config.agent.shell_execution.sandbox_provider.value,
+            shell_fail_if_unavailable=config.agent.shell_execution.fail_if_unavailable,
         )
 
     merged_tools = _merge_tools(builtin_tools, tools or [])

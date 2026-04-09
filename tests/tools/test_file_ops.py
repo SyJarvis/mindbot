@@ -42,6 +42,21 @@ def test_write_file_allows_system_whitelist(tmp_path: Path) -> None:
     assert target.read_text(encoding="utf-8") == "hello"
 
 
+def test_allowed_root_covers_nested_subdirectories(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    system_dir = tmp_path / "system"
+    nested_dir = system_dir / "nested" / "docs"
+    nested_dir.mkdir(parents=True)
+    target = nested_dir / "note.txt"
+    target.write_text("nested", encoding="utf-8")
+
+    tools = _tool_map(workspace, allowed_paths=[system_dir])
+    result = tools["read_file"].handler(str(target))  # type: ignore[union-attr]
+
+    assert "1|nested" in result
+
+
 def test_file_ops_reject_paths_outside_allowed_roots(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     workspace.mkdir()

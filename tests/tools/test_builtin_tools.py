@@ -57,6 +57,17 @@ async def test_exec_command_runs_safe_command(tmp_path: Path) -> None:
 
 
 @pytest.mark.anyio
+async def test_exec_command_allows_parent_navigation_within_allowed_tree(tmp_path: Path) -> None:
+    tools = _tool_map(tmp_path)
+    nested = tmp_path / "nested" / "child"
+    nested.mkdir(parents=True)
+
+    result = await tools["exec_command"].handler("cd .. && pwd", working_dir=str(nested))  # type: ignore[union-attr]
+
+    assert str(tmp_path / "nested") in result
+
+
+@pytest.mark.anyio
 async def test_web_search_reports_missing_provider(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("BRAVE_API_KEY", raising=False)
     tools = _tool_map(tmp_path)
@@ -85,6 +96,18 @@ def test_whitelisted_system_directory_is_allowed(tmp_path: Path) -> None:
 
     tools = _tool_map(tmp_path, allowed_paths=[system_dir])
     result = tools["read_file"].handler(str(target))  # type: ignore[union-attr]
+
+    assert "1|ok" in result
+
+
+def test_whitelisted_root_covers_nested_files(tmp_path: Path) -> None:
+    system_dir = tmp_path / "system"
+    nested = system_dir / "deep" / "state.txt"
+    nested.parent.mkdir(parents=True)
+    nested.write_text("ok", encoding="utf-8")
+
+    tools = _tool_map(tmp_path, allowed_paths=[system_dir])
+    result = tools["read_file"].handler(str(nested))  # type: ignore[union-attr]
 
     assert "1|ok" in result
 
@@ -147,7 +170,9 @@ def test_get_mindbot_runtime_info_reports_config_and_skills(
     assert data["config"]["agent_model"] == "openai/test"
     assert data["config"]["configured_workspace"] == str((mindbot_home / "workspace").expanduser())
     assert data["config"]["system_path_whitelist"] == [str(mindbot_home)]
+    assert data["config"]["shell_execution"]["policy"] == "cwd_guard"
     assert str(tmp_path) in data["system"]["allowed_paths"]
+    assert "does not provide OS-level shell sandboxing" in data["system"]["shell_execution_boundary"]
     assert "cwd" not in data["system"]
     assert data["memory"]["storage"]["exists"] is True
     assert data["journal"]["enabled"] is True

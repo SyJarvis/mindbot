@@ -1,6 +1,7 @@
 """MindBot CLI."""
 
-from dataclasses import dataclass
+import json
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -26,6 +27,36 @@ class _ShellEventState:
 
     saw_delta: bool = False
     line_open: bool = False
+
+
+@dataclass
+class _ShellSessionContext:
+    """Per-session shell directory and trust state."""
+
+    config_file: Path
+    workspace: Path
+    session_cwd: Path
+    persisted_trusted_paths: set[Path] = field(default_factory=set)
+    session_trusted_paths: set[Path] = field(default_factory=set)
+    session_cwd_authorized: bool | None = None
+
+    @property
+    def trusted_paths(self) -> list[Path]:
+        return sorted(self.persisted_trusted_paths | self.session_trusted_paths)
+
+    @property
+    def effective_root(self) -> Path:
+        return self.session_cwd if self.session_cwd_authorized else self.workspace
+
+    @property
+    def trust_status(self) -> str:
+        if self.session_cwd_authorized is True:
+            if self.session_cwd == self.workspace:
+                return "workspace"
+            return "authorized"
+        if self.session_cwd_authorized is False:
+            return "denied"
+        return "pending"
 
 
 def _emit_shell_event(event: Any, state: _ShellEventState) -> None:
@@ -78,6 +109,146 @@ def _render_shell_response(content: str, state: _ShellEventState) -> None:
     if not state.saw_delta and content:
         console.print(Markdown(content))
     console.print()
+
+
+def _unique_paths(paths: list[Path | str]) -> list[Path]:
+    resolved: list[Path] = []
+    for path in paths:
+        candidate = Path(path).expanduser().resolve()
+        if candidate not in resolved:
+            resolved.append(candidate)
+    return resolved
+
+
+def _resolve_shell_session_context(bot: Any, config_file: Path, launch_cwd: Path) -> _ShellSessionContext:
+    """Build shell session state from config and launch directory."""
+    from mindbot.tools.path_policy import is_within_allowed_roots, resolve_allowed_roots
+
+    workspace, allowed_roots = resolve_allowed_roots(
+        bot.config.agent.workspace,
+        restrict_to_workspace=bot.config.agent.restrict_to_workspace,
+        allowed_paths=[
+            *bot.config.agent.system_path_whitelist,
+            *bot.config.agent.trusted_paths,
+        ],
+    )
+    session_cwd = launch_cwd.expanduser().resolve()
+    persisted_trusted_paths = set(_unique_paths(list(bot.config.agent.trusted_paths)))
+    authorized = is_within_allowed_roots(session_cwd, allowed_roots)
+    return _ShellSessionContext(
+        config_file=config_file,
+        workspace=workspace,
+        session_cwd=session_cwd,
+        persisted_trusted_paths=persisted_trusted_paths,
+        session_cwd_authorized=authorized,
+    )
+
+
+def _persist_trusted_path(config_file: Path, trusted_path: Path) -> None:
+    """Persist *trusted_path* into the active config file."""
+    data = json.loads(config_file.read_text(encoding="utf-8"))
+    agent_data = data.setdefault("agent", {})
+    trusted_paths = agent_data.setdefault("trusted_paths", [])
+    trusted_text = str(trusted_path)
+    if trusted_text not in trusted_paths:
+        trusted_paths.append(trusted_text)
+        config_file.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def _prompt_trust_session_cwd(bot: Any, shell_ctx: _ShellSessionContext) -> None:
+    """Ask whether the current shell directory should be trusted."""
+    if shell_ctx.session_cwd_authorized is not None:
+        return
+
+    console.print(
+        "[yellow]Current directory is outside the configured workspace.[/yellow]\n"
+        f"  Workspace: {shell_ctx.workspace}\n"
+        f"  Current directory: {shell_ctx.session_cwd}\n"
+        "Authorize this directory so MindBot can use it as the default current "
+        "directory for this shell session?\n"
+        "[dim]This does not enable an OS-level shell sandbox.[/dim]"
+    )
+    choice = typer.prompt(
+        "Choose [session/persist/deny]",
+        default="session",
+        show_default=True,
+    ).strip().lower()
+
+    if choice in {"persist", "p", "always"}:
+        _persist_trusted_path(shell_ctx.config_file, shell_ctx.session_cwd)
+        if str(shell_ctx.session_cwd) not in bot.config.agent.trusted_paths:
+            bot.config.agent.trusted_paths.append(str(shell_ctx.session_cwd))
+        shell_ctx.persisted_trusted_paths.add(shell_ctx.session_cwd)
+        shell_ctx.session_cwd_authorized = True
+        console.print(f"[green]Trusted and persisted:[/green] {shell_ctx.session_cwd}")
+        return
+
+    if choice in {"session", "s", "once"}:
+        shell_ctx.session_trusted_paths.add(shell_ctx.session_cwd)
+        shell_ctx.session_cwd_authorized = True
+        console.print(f"[green]Trusted for this session:[/green] {shell_ctx.session_cwd}")
+        return
+
+    shell_ctx.session_cwd_authorized = False
+    console.print(
+        f"[yellow]Current directory not trusted.[/yellow] MindBot will continue using "
+        f"workspace {shell_ctx.workspace}"
+    )
+
+
+def _build_shell_turn_tools(bot: Any, shell_ctx: _ShellSessionContext) -> list[Any]:
+    """Build the tool set for one shell turn using the current trust state."""
+    from mindbot.tools.file_ops import create_file_tools
+    from mindbot.tools.mindbot_ops import create_mindbot_tools
+    from mindbot.tools.shell_ops import create_shell_tools
+    from mindbot.tools.web_ops import create_web_tools
+
+    allowed_paths = _unique_paths(
+        [
+            shell_ctx.workspace,
+            *bot.config.agent.system_path_whitelist,
+            *bot.config.agent.trusted_paths,
+            *[str(path) for path in shell_ctx.session_trusted_paths],
+        ]
+    )
+    effective_root = shell_ctx.effective_root
+
+    file_tools = create_file_tools(
+        effective_root,
+        restrict_to_workspace=bot.config.agent.restrict_to_workspace,
+        allowed_paths=allowed_paths,
+    )
+    shell_tools = create_shell_tools(
+        effective_root,
+        restrict_to_workspace=bot.config.agent.restrict_to_workspace,
+        allowed_paths=allowed_paths,
+        execution_policy=bot.config.agent.shell_execution.policy.value,
+        sandbox_provider=bot.config.agent.shell_execution.sandbox_provider.value,
+        fail_if_unavailable=bot.config.agent.shell_execution.fail_if_unavailable,
+    )
+    mindbot_tools = create_mindbot_tools(
+        shell_ctx.workspace,
+        restrict_to_workspace=bot.config.agent.restrict_to_workspace,
+        allowed_paths=allowed_paths,
+        session_cwd=shell_ctx.session_cwd,
+        effective_workspace=effective_root,
+        session_trusted_paths=shell_ctx.trusted_paths,
+        session_cwd_authorized=shell_ctx.session_cwd_authorized,
+    )
+    web_tools = create_web_tools()
+
+    merged: dict[str, Any] = {}
+    builtin_names: set[str] = set()
+    for tool in [*file_tools, *shell_tools, *mindbot_tools, *web_tools]:
+        merged[tool.name] = tool
+        builtin_names.add(tool.name)
+
+    for tool in bot.list_tools():
+        tool_name = getattr(tool, "name", type(tool).__name__)
+        if tool_name not in builtin_names:
+            merged[tool_name] = tool
+
+    return list(merged.values())
 
 
 def version_callback(value: bool):
@@ -292,7 +463,7 @@ def status():
 # Slash command handler
 # ======================================================================
 
-def _handle_slash_command(cmd: str, bot: Any) -> None:
+def _handle_slash_command(cmd: str, bot: Any, shell_ctx: _ShellSessionContext | None = None) -> None:
     """Dispatch slash commands in the interactive shell.
 
     Supported commands:
@@ -310,7 +481,7 @@ def _handle_slash_command(cmd: str, bot: Any) -> None:
     elif command == "/help":
         _cmd_help()
     elif command == "/status":
-        _cmd_status(bot)
+        _cmd_status(bot, shell_ctx)
     else:
         console.print(f"[yellow]Unknown command: {command}[/yellow]")
         console.print("[dim]Type /help for available commands[/dim]")
@@ -366,10 +537,22 @@ def _cmd_help() -> None:
     console.print("  exit, quit, bye     Exit the shell")
 
 
-def _cmd_status(bot: Any) -> None:
+def _cmd_status(bot: Any, shell_ctx: _ShellSessionContext | None = None) -> None:
     """Show bot status."""
     console.print(f"  Model:    [cyan]{bot.model}[/cyan]")
     console.print(f"  Provider: [cyan]{bot.provider}[/cyan]")
+    if shell_ctx is not None:
+        console.print(f"  Workspace: [cyan]{shell_ctx.workspace}[/cyan]")
+        console.print(f"  Current directory: [cyan]{shell_ctx.session_cwd}[/cyan]")
+        console.print(f"  Effective root: [cyan]{shell_ctx.effective_root}[/cyan]")
+        console.print(f"  Directory trust: [cyan]{shell_ctx.trust_status}[/cyan]")
+        trusted_paths = ", ".join(str(path) for path in shell_ctx.trusted_paths) or "(none)"
+        console.print(f"  Trusted paths: [cyan]{trusted_paths}[/cyan]")
+        console.print(
+            "  Shell policy: [cyan]"
+            f"{bot.config.agent.shell_execution.policy.value}"
+            "[/cyan]"
+        )
 
 
 # ======================================================================
@@ -407,8 +590,13 @@ def shell(
         console.print(f"[red]Error initializing bot: {e}[/red]")
         raise typer.Exit(1)
 
+    shell_ctx = _resolve_shell_session_context(bot, config_file, Path.cwd())
+
     console.print("[bold green]MindBot Shell[/bold green] (Ctrl+C to exit)")
     console.print(f"[dim]Session: {session_id} | Model: {bot.model}[/dim]")
+    console.print(f"[dim]Workspace: {shell_ctx.workspace}[/dim]")
+    console.print(f"[dim]Current directory: {shell_ctx.session_cwd}[/dim]")
+    _prompt_trust_session_cwd(bot, shell_ctx)
     console.print("[dim]Type /help for slash commands[/dim]\n")
 
     while True:
@@ -423,16 +611,18 @@ def shell(
             # ---- Slash command handling ----
             stripped = user_input.strip()
             if stripped.startswith("/"):
-                _handle_slash_command(stripped, bot)
+                _handle_slash_command(stripped, bot, shell_ctx)
                 continue
 
             console.print("[dim]Thinking...[/dim]")
             import asyncio
             state = _ShellEventState()
+            turn_tools = _build_shell_turn_tools(bot, shell_ctx)
             agent_response = asyncio.run(
                 bot.chat(
                     user_input,
                     session_id=session_id,
+                    tools=turn_tools,
                     on_event=lambda event: _emit_shell_event(event, state),
                 )
             )
@@ -496,6 +686,55 @@ def serve(
             await channel_manager.stop_all()
 
     asyncio.run(main())
+
+
+# ======================================================================
+# benchmark adapter
+# ======================================================================
+
+@app.command("toolcall15-adapter")
+def toolcall15_adapter(
+    host: str = typer.Option("127.0.0.1", "--host", help="Host to bind the OpenAI-compatible adapter to"),
+    port: int = typer.Option(11435, "--port", help="Port to bind the OpenAI-compatible adapter to"),
+    config_path: Path | None = typer.Option(
+        None,
+        "--config-path",
+        help="Optional path to a MindBot settings.json file",
+    ),
+    model: str | None = typer.Option(
+        None,
+        "--model",
+        help="Optional fixed instance/model ref exposed to ToolCall-15",
+    ),
+):
+    """Serve an OpenAI-compatible bridge for ToolCall-15."""
+    import asyncio
+
+    from mindbot.benchmarking import serve_toolcall15_adapter
+
+    resolved_config_path = config_path or _find_config_file()
+    if resolved_config_path is None:
+        console.print("[red]Error: Config not found. Run 'mindbot generate-config' first.[/red]")
+        raise typer.Exit(1)
+
+    console.print("[bold green]Starting ToolCall-15 adapter[/bold green]")
+    console.print(f"  Host: {host}")
+    console.print(f"  Port: {port}")
+    console.print(f"  Config: {resolved_config_path}")
+    if model:
+        console.print(f"  Fixed model: {model}")
+
+    try:
+        asyncio.run(
+            serve_toolcall15_adapter(
+                host=host,
+                port=port,
+                config_path=resolved_config_path,
+                default_model=model,
+            )
+        )
+    except KeyboardInterrupt:
+        console.print("\n[yellow]ToolCall-15 adapter stopped[/yellow]")
 
 
 # ======================================================================

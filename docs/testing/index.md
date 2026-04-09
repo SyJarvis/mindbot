@@ -4,6 +4,12 @@
 
 MindBot 使用 **pytest** 作为测试框架，当前共有 **316 个测试用例**，覆盖项目的所有核心模块。
 
+Benchmark 相关文档：
+
+- [ToolCall-15 Benchmark](toolcall15.md) — 当前阶段主 benchmark 的定位、运行方式和扩展路线
+- [ToolCall-15 Baseline Template](toolcall15-baseline-template.md) — 首轮基线记录模板
+- [Real Tools Benchmark](real-tools.md) — 真实文件/Shell/HTTP 工具执行 benchmark
+
 ```
 tests/
 ├── agent/            # 8 tests  — 核心代理（TurnEngine、调度器、输入构建、持久化）
@@ -187,6 +193,8 @@ def test_read_file_uses_workspace_guard(self, tmp_path: Path) -> None:
     target.write_text("hello", encoding="utf-8")
     # 在 tmp_path 内操作，安全隔离
 ```
+
+当测试覆盖路径白名单时，建议显式构造一个“允许根目录”和其子目录，验证允许根会递归覆盖整棵目录树。
 
 ### 7. 环境变量测试
 

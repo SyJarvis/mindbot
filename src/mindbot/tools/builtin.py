@@ -18,6 +18,9 @@ def create_builtin_tools(
     *,
     restrict_to_workspace: bool = True,
     allowed_paths: Sequence[Path | str] | None = None,
+    shell_execution_mode: str = "cwd_guard",
+    shell_sandbox_provider: str = "none",
+    shell_fail_if_unavailable: bool = False,
 ) -> list[Tool]:
     """Create the default built-in tool set."""
     root, allowed_roots = resolve_allowed_roots(
@@ -38,6 +41,9 @@ def create_builtin_tools(
             root,
             restrict_to_workspace=restrict_to_workspace,
             allowed_paths=allowed_roots,
+            execution_policy=shell_execution_mode,
+            sandbox_provider=shell_sandbox_provider,
+            fail_if_unavailable=shell_fail_if_unavailable,
         )
     )
     tools.extend(

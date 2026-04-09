@@ -41,7 +41,7 @@ def create_file_tools(
     restrict_to_workspace: bool = True,
     allowed_paths: Sequence[Path | str] | None = None,
 ) -> list[Tool]:
-    """Create the built-in file tools bound to *workspace*."""
+    """Create built-in file tools bound to allowed root directories and subtrees."""
     root, allowed_roots = resolve_allowed_roots(
         workspace,
         restrict_to_workspace=restrict_to_workspace,
@@ -172,7 +172,10 @@ def create_file_tools(
     return [
         Tool(
             name="read_file",
-            description="Read a file from the workspace. Supports optional offset and limit for partial reads.",
+            description=(
+                "Read a file from the configured workspace or another allowed root directory. "
+                "Supports optional offset and limit for partial reads."
+            ),
             parameters_schema_override={
                 "type": "object",
                 "properties": {
@@ -187,7 +190,10 @@ def create_file_tools(
         ),
         Tool(
             name="write_file",
-            description="Write content to a file. Creates parent directories when requested.",
+            description=(
+                "Write content to a file under the configured workspace or another allowed root "
+                "directory. Creates parent directories when requested."
+            ),
             parameters_schema_override={
                 "type": "object",
                 "properties": {
@@ -206,7 +212,10 @@ def create_file_tools(
         ),
         Tool(
             name="edit_file",
-            description="Replace exact text in a file. Requires unique old_string unless replace_all is true.",
+            description=(
+                "Replace exact text in a file under an allowed root directory. Requires unique "
+                "old_string unless replace_all is true."
+            ),
             parameters_schema_override={
                 "type": "object",
                 "properties": {
@@ -226,7 +235,7 @@ def create_file_tools(
         ),
         Tool(
             name="list_directory",
-            description="List files and directories under the configured allowed paths.",
+            description="List files and directories under the configured allowed root directories.",
             parameters_schema_override={
                 "type": "object",
                 "properties": {
@@ -243,7 +252,7 @@ def create_file_tools(
         ),
         Tool(
             name="file_info",
-            description="Return basic information about an allowed file or directory.",
+            description="Return basic information about a file or directory under an allowed root.",
             parameters_schema_override={
                 "type": "object",
                 "properties": {

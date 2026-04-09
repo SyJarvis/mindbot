@@ -1,0 +1,4 @@
+# Rollout Notes
+Service: mindbot
+Rollout ID: ROLLOUT-17
+Window: 2026-04-09T18:00:00Z
