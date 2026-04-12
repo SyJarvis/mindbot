@@ -501,6 +501,7 @@ class ChannelsConfig(BaseModel):
     cli: CLIChannelConfig = Field(default_factory=CLIChannelConfig)
     telegram: TelegramChannelConfig = Field(default_factory=TelegramChannelConfig)
     feishu: FeishuChannelConfig = Field(default_factory=FeishuChannelConfig)
+    acp: Any = Field(default=None, description="ACP channel config (mindbot.acp.config.ACPChannelConfig)")
 
 
 class Config(BaseSettings):
