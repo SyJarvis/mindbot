@@ -18,6 +18,10 @@ from mindbot.config.schema import (
     ToolPersistenceStrategy,
     KNOWN_PROVIDER_TYPES,
 )
+from mindbot.config.bus import ConfigBus
+from mindbot.config.persistence import ConfigPersistence
+from mindbot.config.sync import ConfigSync
+from mindbot.config.integration import AgentConfigIntegration
 
 __all__ = [
     "Config",
@@ -36,4 +40,9 @@ __all__ = [
     "KNOWN_PROVIDER_TYPES",
     "VISION_PATTERNS",
     "load_config",
+    # Real-time config system (Phase 1-4)
+    "ConfigBus",
+    "ConfigPersistence",
+    "ConfigSync",
+    "AgentConfigIntegration",
 ]

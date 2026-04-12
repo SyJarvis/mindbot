@@ -471,17 +471,21 @@ def _handle_slash_command(cmd: str, bot: Any, shell_ctx: _ShellSessionContext | 
         /model <instance/model>   Switch to a different model
         /help                 Show available slash commands
         /status               Show bot status
+        /config               Real-time config commands
     """
-    parts = cmd.split(maxsplit=1)
+    parts = cmd.split()
     command = parts[0].lower()
-    arg = parts[1].strip() if len(parts) > 1 else ""
+    args = parts[1:] if len(parts) > 1 else []
 
     if command == "/model":
+        arg = " ".join(args)
         _cmd_model(bot, arg)
     elif command == "/help":
         _cmd_help()
     elif command == "/status":
         _cmd_status(bot, shell_ctx)
+    elif command == "/config":
+        _cmd_config(args)
     else:
         console.print(f"[yellow]Unknown command: {command}[/yellow]")
         console.print("[dim]Type /help for available commands[/dim]")
@@ -533,6 +537,12 @@ def _cmd_help() -> None:
     console.print("  /model              List available models")
     console.print("  /model <name>       Switch model (e.g. /model my-ollama/qwen3)")
     console.print("  /status             Show current bot status")
+    console.print("  /config             Real-time config commands")
+    console.print("  /config get <scope> <key>")
+    console.print("  /config set <scope> <key> <value>")
+    console.print("  /config auth grant <user> <tool> [--expires <sec>]")
+    console.print("  /config auth check <user> <tool>")
+    console.print("  /config list")
     console.print("  /help               Show this help")
     console.print("  exit, quit, bye     Exit the shell")
 
@@ -553,6 +563,12 @@ def _cmd_status(bot: Any, shell_ctx: _ShellSessionContext | None = None) -> None
             f"{bot.config.agent.shell_execution.policy.value}"
             "[/cyan]"
         )
+
+
+def _cmd_config(args: list[str]) -> None:
+    """Handle /config command in shell."""
+    from mindbot.cli.config_cmd import handle_config_command
+    handle_config_command(["config"] + args)
 
 
 # ======================================================================
