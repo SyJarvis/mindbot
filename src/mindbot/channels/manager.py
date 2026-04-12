@@ -8,7 +8,7 @@ from typing import Any
 
 from loguru import logger
 
-from mindbot.bus.events import OutboundMessage
+from mindbot.bus.events import InboundMessage, OutboundMessage
 from mindbot.bus.outbound import build_outbound_message
 from mindbot.bus.queue import MessageBus
 from mindbot.channels.base import BaseChannel
@@ -80,6 +80,16 @@ class ChannelManager:
                 logger.info("Feishu channel enabled")
             except ImportError as e:
                 logger.warning(f"Feishu channel not available: {e}")
+
+        # ACP channel (Agent Client Protocol)
+        acp_config = getattr(channels_config, "acp", None)
+        if acp_config and getattr(acp_config, "enabled", False):
+            try:
+                from mindbot.acp.channel import ACPChannel
+                self.channels["acp"] = ACPChannel(acp_config, self.bus)
+                logger.info("ACP channel enabled")
+            except ImportError as e:
+                logger.warning(f"ACP channel not available: {e}")
 
     async def _start_channel(self, name: str, channel: BaseChannel) -> None:
         """Start a channel and log any exceptions."""
@@ -180,6 +190,26 @@ class ChannelManager:
                     logger.warning(f"Dropping inbound message from {msg.channel}: no chat handler configured")
                     continue
 
+                # Check ACP routing
+                acp_channel = self.channels.get("acp")
+                if acp_channel and self._should_route_acp(msg):
+                    try:
+                        response = await acp_channel.handle_prompt(msg)
+                        reply = build_outbound_message(
+                            channel=msg.channel,
+                            chat_id=msg.chat_id,
+                            response=response,
+                        )
+                    except Exception as e:
+                        logger.error(f"ACP error handling message from {msg.channel}: {e}")
+                        reply = OutboundMessage(
+                            channel=msg.channel,
+                            chat_id=msg.chat_id,
+                            content=f"ACP Error: {e}",
+                        )
+                    await self.bus.publish_outbound(reply)
+                    continue
+
                 session_id = msg.metadata.get("session_id", "default")
                 try:
                     response = await self._chat_handler(msg.content, session_id)
@@ -202,6 +232,30 @@ class ChannelManager:
                 continue
             except asyncio.CancelledError:
                 break
+
+    def _should_route_acp(self, msg: InboundMessage) -> bool:
+        """Check if an inbound message should be routed to ACP."""
+        acp_channel = self.channels.get("acp")
+        if not acp_channel:
+            return False
+        config = getattr(acp_channel, "config", None)
+        if not config:
+            return False
+        routing = getattr(config, "routing", {})
+        default_agent = getattr(config, "default_agent", None)
+
+        # Check exact match
+        exact = f"{msg.channel}:{msg.chat_id}"
+        if exact in routing:
+            return True
+        # Check wildcard pattern
+        pattern = f"{msg.channel}:*"
+        if pattern in routing:
+            return True
+        # Route to default agent if configured
+        if default_agent:
+            return False  # Only route if explicit routing rules match
+        return False
 
     def set_chat_handler(
         self,
