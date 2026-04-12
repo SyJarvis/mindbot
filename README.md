@@ -1,38 +1,51 @@
 # MindBot
 
-[![Version](https://img.shields.io/badge/Version-0.3.1-blue.svg)](https://github.com/your-org/mindbot)
-[![Python](https://img.shields.io/badge/Python-3.10+-blue?logo=python)](https://www.python.org/)
-[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+<div align="center">
+  <img src="docs/assets/mindbot_logo.png" alt="MindBot" width="400" />
+</div>
 
-[English](README_EN.md) | 中文
+<p align="center">
+  <a href="https://github.com/SyJarvis/mindbot"><img src="https://img.shields.io/badge/Version-0.3.3-blue.svg" alt="Version"></a>
+  <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3.10+-blue?logo=python" alt="Python"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License"></a>
+</p>
 
-基于 **Python + asyncio** 的模块化 AI Agent 框架，支持多 Provider、动态路由、流式响应和工具确认机制。
+<p align="center">基于 <strong>Python + asyncio</strong> 的模块化 AI Agent 框架，支持多 Provider、动态路由、流式响应和工具确认机制。</p>
 
-**[📖 架构文档](docs/ARCHITECTURE.md) · [🧱 分层文档](docs/architecture/layers/README.md)**
+<p align="center"><a href="docs/index.md">📖 文档</a> · <a href="docs/guide/quickstart.md">🚀 快速开始</a> · <a href="docs/architecture/overview.md">🧱 架构</a> · <a href="docs/guide/examples.md">📝 示例</a></p>
+
+---
+
+## 📢 News
+
+- **2026-04-10** 🚀 **实时配置系统** — ConfigBus 事件总线、AuthManager 授权管理、配置持久化、多实例同步
+- **2026-04-09** 🏗️ **ACP 协议支持** — Agent Client Protocol 通道，支持 Claude Code、Codex 等外部 Agent
+- **2026-04-02** 📊 **Agent Benchmark** — ToolCall-15 和 Real-Tools benchmark 框架
+
+<details>
+<summary>Earlier news</summary>
+
+- **2026-03-05** 🔧 **v0.3.0** — 多 Agent 编排、Skills 机制、会话 Journal
+- **2026-02-27** 🧠 **记忆系统** — 短期/长期记忆，向量检索
+- **2026-02-20** 💬 **多通道支持** — 飞书、Telegram、HTTP
+- **2026-02-10** 🎉 **MindBot 发布** — 基于 Python + asyncio 的模块化 Agent 框架
+
+</details>
+
+---
 
 ## 特性
 
-| 特性 | 说明 |
-|------|------|
-| 统一入口 | `AgentOrchestrator` 自主决策，无需预选模式 |
-| 流式响应 | 实时事件流，用户可看到 Agent 思考过程 |
-| 工具确认 | 多级安全确认机制（安全级别、白名单、危险工具检测）|
-| 路径安全 | 文件工具路径策略 + Shell 执行边界控制，降低越权风险 |
-| 智能路由 | 根据内容类型/复杂度/关键词自动选择模型 |
-| 多 Provider | OpenAI / Ollama / Transformers / llama.cpp |
-| 可中断执行 | 用户可随时中止 Agent 运行 |
-| 记忆系统 | 短期/长期记忆，向量检索，自动归档 |
-| Skills 机制 | `SKILL.md` 技能包按需注入 prompt，默认摘要、命中后展开正文 |
-| 上下文管理 | Token 预算管理，自动压缩，工具持久化策略（none/summary/full）|
-| 多通道支持 | CLI、HTTP、飞书、Telegram |
-| 对话追踪 | Tracer 记录完整对话日志 |
+- 🪶 **轻量高效** — 纯 Python + asyncio，五层架构设计
+- 🧠 **长期记忆** — Markdown 存储，向量检索，自动归档
+- 🎯 **智能路由** — 根据内容类型/复杂度/关键词自动选择模型
+- 🔒 **工具确认** — 多级安全确认机制（白名单、危险工具检测）
+- 🛡️ **路径安全** — 文件工具路径策略 + Shell 执行边界控制
+- 💬 **多通道** — CLI、HTTP、飞书、Telegram
+- 🔌 **Skills 机制** — `SKILL.md` 技能包按需注入 prompt
+- ⚙️ **实时配置** — ConfigBus 热更新，授权实时生效
 
-## 运行环境要求
-
-| 要求 | 版本 |
-|------|------|
-| Python | >= 3.10 |
-| asyncio | 内置 |
+---
 
 ## 安装
 
@@ -42,22 +55,86 @@ cd mindbot
 pip install -e .
 ```
 
+---
+
 ## 快速开始
 
 ### 1. 配置 LLM
 
-**本地 Ollama（推荐）**
+MindBot 支持四种 LLM 适配器：
+
+| 适配器 | 说明 | 适用场景 |
+|--------|------|----------|
+| `ollama` | 本地运行，无需 API Key | 开发测试、私有部署 |
+| `openai` | OpenAI API 或兼容服务 | 云服务、生产环境 |
+| `llama_cpp` | llama.cpp 本地推理 | 低资源环境 |
+| `transformers` | HuggingFace 模型 | 研究实验 |
+
+#### Ollama（本地运行）
 
 ```bash
+# 安装并启动 Ollama
 ollama pull qwen3
+
+# 配置 ~/.mindbot/settings.json
+{
+  "providers": {
+    "local-ollama": {
+      "type": "ollama",
+      "endpoints": [{
+        "base_url": "http://localhost:11434",
+        "models": [{ "id": "qwen3", "role": "chat", "level": "medium" }]
+      }]
+    }
+  },
+  "agent": {
+    "model": "local-ollama/qwen3"
+  }
+}
 ```
 
-**云服务**
+#### OpenAI / 兼容服务
 
 ```bash
+# 设置 API Key
 export OPENAI_API_KEY=your-api-key
-# 或
-export MOONSHOT_API_KEY=your-api-key
+
+# 配置 ~/.mindbot/settings.json
+{
+  "providers": {
+    "openai": {
+      "type": "openai",
+      "endpoints": [{
+        "base_url": "https://api.openai.com/v1",
+        "api_key": "{env:OPENAI_API_KEY}",
+        "models": [{ "id": "gpt-4o", "role": "chat", "level": "high" }]
+      }]
+    }
+  },
+  "agent": {
+    "model": "openai/gpt-4o"
+  }
+}
+```
+
+**兼容服务**（如 DeepSeek、Moonshot、GLM）只需修改 `base_url`：
+
+```json
+{
+  "providers": {
+    "deepseek": {
+      "type": "openai",
+      "endpoints": [{
+        "base_url": "https://api.deepseek.com/v1",
+        "api_key": "{env:DEEPSEEK_API_KEY}",
+        "models": [{ "id": "deepseek-chat", "role": "chat", "level": "high" }]
+      }]
+    }
+  },
+  "agent": {
+    "model": "deepseek/deepseek-chat"
+  }
+}
 ```
 
 ### 2. 初始化配置
@@ -68,226 +145,21 @@ mindbot generate-config
 
 这会创建 `~/.mindbot/settings.json` 和 `~/.mindbot/SYSTEM.md`。
 
-### 3. 编辑配置
-
-`~/.mindbot/settings.json`（JSONC 格式，支持注释和尾随逗号）：
-
-```jsonc
-{
-  // Provider 实例 - 支持多账号、负载均衡
-  "providers": {
-    // 本地 Ollama 实例
-    "local-ollama": {
-      "type": "ollama",
-      "strategy": "round-robin",
-      "endpoints": [
-        {
-          "base_url": "http://localhost:11434",
-          "weight": 1,
-          "models": [
-            { "id": "qwen3", "role": "chat", "level": "medium", "vision": false },
-            { "id": "qwen3-vl:8b", "role": "chat", "level": "high", "vision": true }
-          ]
-        }
-      ]
-    },
-
-    // OpenAI 兼容
-    "moonshot": {
-      "type": "openai",
-      "strategy": "priority",
-      "endpoints": [
-        {
-          "base_url": "https://api.moonshot.cn/v1",
-          "api_key": "{env:MOONSHOT_API_KEY}",
-          "weight": 1,
-          "models": [
-            { "id": "kimi-k2.5", "role": "chat", "level": "high", "vision": true }
-          ]
-        }
-      ]
-    }
-  },
-
-  // 默认模型: "instance_name/model_id"
-  "agent": {
-    "model": "local-ollama/qwen3",
-    "temperature": 0.7,
-    "max_tokens": 8192,
-    "max_tool_iterations": 20,
-    "workspace": "~/.mindbot/workspace",
-    "system_path_whitelist": ["~/.mindbot"],
-    "trusted_paths": [],
-    "restrict_to_workspace": true,
-    "shell_execution": {
-      "policy": "cwd_guard",
-      "sandbox_provider": "none",
-      "fail_if_unavailable": false
-    },
-    "tool_persistence": "none"
-  },
-
-  // 动态路由
-  "routing": {
-    "auto": true,
-    "rules": [
-      { "keywords": ["代码", "code", "编程"], "level": "high", "priority": 10 },
-      { "keywords": ["你好", "简单"], "level": "low", "priority": 5 }
-    ]
-  },
-
-  // 记忆配置
-  "memory": {
-    "storage_path": "~/.mindbot/data/memory.db",
-    "markdown_path": "~/.mindbot/data/memory",
-    "short_term_retention_days": 7
-  },
-
-  // Prompt-layer skills
-  "skills": {
-    "enabled": true,
-    "skill_dirs": [],
-    "always_include": ["mindbot-self-knowledge"],
-    "max_visible": 8,
-    "max_detail_load": 2,
-    "trigger_mode": "metadata-match"
-  },
-
-  // 上下文配置
-  "context": {
-    "max_tokens": 8000,
-    "compression": "truncate",
-    "blocks": {
-      "skills_overview": 640,
-      "skills_detail": 1200
-    }
-  },
-
-  // 会话记录
-  "session_journal": {
-    "enabled": true,
-    "path": "~/.mindbot/data/journal"
-  },
-
-  // 多模态配置
-  "multimodal": {
-    "max_images": 10,
-    "max_file_size_mb": 20.0
-  },
-
-  // 通道配置
-  "channels": {
-    "http": { "enabled": false, "host": "0.0.0.0", "port": 31211 },
-    "cli": { "enabled": false },
-    "feishu": { "enabled": false, "app_id": "", "app_secret": "" },
-    "telegram": { "enabled": false, "token": "" }
-  }
-}
-```
-
-> **注意**：YAML 配置格式已弃用，请使用 JSON/JSONC 格式。可使用 `mindbot config migrate` 迁移旧配置。
-
-### Agent 配置项说明
-
-| 配置项 | 类型 | 默认值 | 说明 |
-|--------|------|--------|------|
-| `model` | string | `"local-ollama/qwen3.5:2b"` | 默认模型，格式 `instance/model` |
-| `workspace` | string | `"~/.mindbot/workspace"` | 内置文件/Shell 工具的工作空间根目录 |
-| `system_path_whitelist` | list | `["~/.mindbot"]` | 额外允许的系统路径根目录白名单，白名单目录下的子树也允许访问 |
-| `trusted_paths` | list | `[]` | 用户显式信任的目录根；shell 会话可在授权后把这些目录当作默认当前目录 |
-| `restrict_to_workspace` | bool | `true` | 是否将工具限制在工作空间和允许根目录内 |
-| `shell_execution.policy` | string | `"cwd_guard"` | Shell 执行策略；`cwd_guard` 只校验启动目录与基础安全规则，`sandboxed` 预留给未来 OS 级沙箱 |
-| `shell_execution.sandbox_provider` | string | `"none"` | 预留的 Shell 沙箱后端，v0.3 默认不启用 |
-| `shell_execution.fail_if_unavailable` | bool | `false` | 未来 `sandboxed` 模式下，沙箱不可用时是否失败关闭 |
-| `tool_persistence` | string | `"none"` | 工具消息持久化策略：`none`/`summary`/`full` |
-| `max_tool_iterations` | int | `20` | 单轮最大工具迭代次数 |
-| `temperature` | float | `0.7` | LLM 温度参数 |
-| `max_tokens` | int | `8192` | 最大生成 token 数 |
-
-### 3.1 Skills 机制
-
-- 内置 skill 位于 `mindbot/skills/<skill-name>/SKILL.md`
-- 用户自定义 skill 位于 `~/.mindbot/skills/<skill-name>/SKILL.md`
-- 每轮对话默认只向模型暴露 skill 摘要
-- 当用户问题命中 skill metadata 时，MindBot 才会把对应 `SKILL.md` 正文注入 prompt
-- skill 负责知识、流程和约束提示；tool 仍负责真实动作执行
-
-### 4. 验证配置
-
-```bash
-mindbot config validate
-```
-
-## Benchmark
-
-当前推荐的 `MindBot v1 benchmark` 是 `ToolCall-15`。
-
-如果你想直接启动 benchmark，可按下面最短路径执行：
-
-```bash
-# 终端 1
-mindbot toolcall15-adapter --host 127.0.0.1 --port 11435 --model local-ollama/qwen3
-
-# 终端 2
-cd benchmark/ToolCall-15
-cp .env.example .env
-```
-
-`.env` 示例：
-
-```env
-LMSTUDIO_HOST=http://127.0.0.1:11435
-LLM_MODELS=lmstudio:local-ollama/qwen3
-MODEL_REQUEST_TIMEOUT_SECONDS=30
-```
-
-然后执行：
-
-```bash
-npm install
-npm run dev
-```
-
-浏览器打开 `http://localhost:3000` 即可开始跑 benchmark。
-
-完整说明见 `docs/testing/toolcall15.md`。
-
-第二阶段 benchmark 是 `real-tools`，用于验证 MindBot 是否真的执行了内置文件、Shell 和本地 HTTP 工具：
-
-```bash
-python benchmark/real-tools/runner.py --config-path ~/.mindbot/settings.json --model gpt-backup/glm-5
-```
-
-完整说明见 `docs/testing/real-tools.md` 和 `benchmark/real-tools/README.md`。
-
-### 5. 基本使用
+### 3. 开始对话
 
 ```python
 import asyncio
 from mindbot import MindBot
 
-
 async def main():
     bot = MindBot()
-
-    # 简单对话
-    response = await bot.chat(
-        "你好，请介绍一下自己",
-        session_id="user123",
-    )
+    response = await bot.chat("你好，请介绍一下自己", session_id="user123")
     print(response.content)
-
-    # 带工具事件回调
-    response = await bot.chat(
-        "帮我计算 25 * 37",
-        session_id="user123",
-        on_event=lambda e: print(f"[{e.type}] {e.data}"),
-    )
-    print(response.content)
-
 
 asyncio.run(main())
 ```
+
+---
 
 ## CLI 命令
 
@@ -295,438 +167,92 @@ asyncio.run(main())
 mindbot <command> [options]
 
 Commands:
-  generate-config      初始化默认配置（别名: onboard）
-  serve                启动服务（多通道）
-  shell                进入交互式 shell
-  chat                 发送单条消息
-  status               显示状态
+  generate-config   初始化配置（别名: onboard）
+  serve             启动服务（多通道）
+  shell             进入交互式 shell
+  chat              发送单条消息
+  status            显示状态
 
-  config show          显示当前配置
-  config validate      验证配置
-  config migrate       将 YAML 配置迁移到 JSON
+  config show       显示当前配置
+  config validate   验证配置
 
 Options:
-  -c, --config <path>  配置文件路径
-  -v, --verbose        详细日志模式
-  -h, --help           显示帮助
-  --version            显示版本
+  -c, --config <path>   配置文件路径
+  -v, --verbose         详细日志模式
 ```
 
-### 交互式 Shell 命令
+### 交互式 Shell
 
-在 `mindbot shell` 中支持以下 slash 命令：
+```bash
+mindbot shell
+```
+
+进入 Shell 后可使用 slash 命令：
 
 | 命令 | 说明 |
 |------|------|
-| `/model` | 列出可用模型 |
-| `/model <name>` | 切换模型（如 `/model local-ollama/qwen3`）|
+| `/model` | 列出所有可用模型 |
+| `/model <name>` | 切换到指定模型（如 `/model local-ollama/qwen3`）|
+| `/config` | 实时配置命令（授权、设置）|
 | `/status` | 显示当前状态 |
 | `/help` | 显示帮助 |
-| `exit`, `quit`, `bye` | 退出 shell |
+| `exit` / `quit` / `bye` | 退出 Shell |
 
-## Examples
+> 使用向上/向下方向键可浏览历史输入，历史存储在 `~/.mindbot/history/`
 
-示例代码位于 `examples/`，建议直接运行文件：
+---
+
+## 多通道支持
+
+### 启动服务
 
 ```bash
-python examples/01_simple_chat.py
+mindbot serve
 ```
 
-| 示例 | 说明 |
-|------|------|
-| `01_simple_chat.py` | 单轮对话 |
-| `02_multi_turn.py` | 多轮会话与 `session_id` |
-| `03_streaming.py` | 流式输出 |
-| `04_event_callbacks.py` | 事件回调 |
-| `05_system_prompt.py` | 系统提示词 |
-| `06_tool_approval.py` | 工具审批 |
-| `07_multi_agent.py` | 多 Agent 编排 |
-| `08_config_from_code.py` | 纯代码配置 |
-| `09_tool_whitelist.py` | 工具白名单 |
-| `10_child_agent.py` | 子 Agent |
-| `11_tool_example.py` | `@tool` 工具定义 |
+根据配置中 `enabled: true` 的通道自动启动。
 
-## 架构
+### 飞书机器人
 
-分层文档入口：[`docs/architecture/layers/README.md`](docs/architecture/layers/README.md)
+**1. 创建飞书应用**
 
-统一执行流图（ASCII）：
+- 访问 [飞书开放平台](https://open.feishu.cn/app)
+- 创建新应用 → 启用 **机器人** 能力
+- **权限配置**：添加 `im:message`（发送消息）、`im:message.p2p_msg:readonly`（接收消息）
+- **事件订阅**：添加 `im.message.receive_v1`，选择「使用长连接接收事件」
+- 获取 **App ID** 和 **App Secret**
 
-```text
-UserInput
-   |
-   v
-[L1 Interface/Transport]
-channels/* + bus/* + cli/*
-   |
-   v
-[L2 Application/Orchestration]
-MindBot.chat() -> Agent/MindAgent -> Scheduler.assemble()
-   |
-   v
-[L3 Conversation Domain]
-context manager/models/compression
-   |
-   v
-[L5 Provider Adapters]
-providers/* (LLM inference)
-   |
-   +--> if tool_calls --> [L2 Approval] --> [L4 Capability Tool Executor]
-   |                                           capability/backends/tooling/*
-   v
-[L2 Commit]
-Scheduler.commit() + memory append
-   |
-   v
-AssistantResponse
-```
+**2. 配置**
 
-## 核心模块
-
-| 模块 | 路径 | 说明 |
-|------|------|------|
-| Bot | `bot.py` | 对外主入口 |
-| Agent | `agent/` | 核心执行引擎 |
-| Provider | `providers/` | LLM 提供商抽象 |
-| Routing | `routing/` | 智能模型路由 |
-| Context | `context/` | 上下文管理 |
-| Memory | `memory/` | 记忆系统 |
-| Capability Tooling | `capability/backends/tooling/` | 工具注册与执行 |
-| Tools | `tools/` | 内置工具（文件/Shell/运行时）|
-| Channels | `channels/` | 多通道支持 |
-| Config | `config/` | 配置管理（JSON/JSONC）|
-| Session | `session/` | 会话日志与类型 |
-
-## Agent 子系统
-
-| 组件 | 文件 | 说明 |
-|------|------|------|
-| `MindBot` | `bot.py` | 用户侧统一 API |
-| `MindAgent` | `agent/core.py` | Supervisor（主 Agent + 子 Agent 管理）|
-| `Agent` | `agent/agent.py` | 基础会话执行单元 |
-| `AgentOrchestrator` | `agent/orchestrator.py` | LLM + tool loop 编排 |
-| `Scheduler` | `agent/scheduler.py` | assemble/commit 回合消息 |
-| `StreamingExecutor` | `agent/streaming.py` | 流式与带工具调用执行 |
-| `ApprovalManager` | `agent/approval.py` | 工具审批与白名单 |
-
-## 智能路由
-
-### 路由优先级
-
-1. **媒体规则** - 包含图片 → 选择 vision 模型
-2. **关键词规则** - 按优先级匹配用户输入
-3. **复杂度评分** - 自动分析文本特征
-4. **默认模型** - `agent.model` 配置
-
-### 配置示例
-
-```jsonc
-{
-  "routing": {
-    "auto": true,
-    "rules": [
-      { "keywords": ["代码", "code", "函数"], "level": "high", "priority": 10 },
-      { "keywords": ["天气", "time"], "level": "low", "priority": 5 }
-    ]
-  },
-  "providers": {
-    "deepseek": {
-      "type": "openai",
-      "endpoints": [{
-        "base_url": "https://api.deepseek.com/v1",
-        "api_key": "{env:DEEPSEEK_API_KEY}",
-        "models": [
-          { "id": "deepseek-chat", "level": "medium" },
-          { "id": "deepseek-reasoner", "level": "high" }
-        ]
-      }]
-    }
-  }
-}
-```
-
-## 工具确认机制
-
-### 安全级别
-
-| 级别 | 说明 |
-|------|------|
-| `DENY` | 所有工具被拒绝 |
-| `ALLOWLIST` | 白名单工具自动批准，其他根据 `ask` 参数 |
-| `FULL` | 所有工具可访问，根据 `ask` 参数决定 |
-
-### 确认模式
-
-| 模式 | 说明 |
-|------|------|
-| `OFF` | 从不请求确认 |
-| `ON_MISS` | 白名单外请求确认 |
-| `ALWAYS` | 总是请求确认 |
-
-### 配置示例
-
-```jsonc
-{
-  "agent": {
-    "approval": {
-      "security": "allowlist",
-      "ask": "on_miss",
-      "timeout": 300,
-      "whitelist": {
-        "calculator": [".*"],
-        "search": [".*"]
-      },
-      "dangerous_tools": [
-        "delete_file",
-        "shell",
-        "execute_command"
-      ]
-    }
-  }
-}
-```
-
-## 路径安全策略
-
-MindBot v0.3 将“文件路径策略”和“Shell 执行边界”分开描述：
-
-- **workspace**: 默认工作目录，所有相对路径以此解析
-- **restrict_to_workspace**: 启用时，文件工具只能在 `workspace` 和 `system_path_whitelist` 定义的允许根目录内运行
-- **system_path_whitelist**: 额外允许访问的系统路径根目录列表（如 `~/.mindbot`），每个根目录都会递归覆盖其子目录和文件
-- **trusted_paths**: 用户显式授权过的目录根；当 `mindbot shell` 从这些目录启动时，文件工具和 shell 可优先把它们作为默认当前目录
-- **shell_execution.policy**: Shell 的独立执行策略；默认 `cwd_guard` 只校验 `working_dir` 和危险命令模式，不是 OS 级沙箱
-
-### 路径安全示例
-
-```jsonc
-{
-  "agent": {
-    "workspace": "~/.mindbot/workspace",
-    "system_path_whitelist": ["~/.mindbot", "/tmp"],
-    "trusted_paths": ["/root/research/mindbot"],
-    "restrict_to_workspace": true,
-    "shell_execution": {
-      "policy": "cwd_guard",
-      "sandbox_provider": "none",
-      "fail_if_unavailable": false
-    }
-  }
-}
-```
-
-**安全规则**:
-- 绝对路径必须落在允许范围内
-- 相对路径基于 workspace 解析
-- 允许根目录按目录树递归生效
-- `mindbot shell` 启动目录会被记录为当前会话目录；若该目录未被信任，CLI 会先要求用户授权再将其作为默认目录
-- 文件工具的路径检查适用于读、写、编辑、列目录等内置文件操作
-- Shell 的 `cwd_guard` 模式只校验 `working_dir` 是否落在允许根目录内，并应用轻量危险命令检查
-- `cwd_guard` 不是 OS 级文件系统沙箱；shell 子进程不会自动获得像 Claude Code Bash sandbox 那样的强隔离
-- 超出范围的路径返回策略错误
-
-## 内置工具
-
-| 工具 | 类别 | 说明 |
-|------|------|------|
-| `read_file` | 文件 | 读取文件，支持 offset/limit 分页 |
-| `write_file` | 文件 | 写入文件，自动创建父目录 |
-| `edit_file` | 文件 | 精确文本替换，支持 replace_all |
-| `list_directory` | 文件 | 列出目录内容，支持 glob 模式 |
-| `file_info` | 文件 | 获取文件/目录基本信息 |
-| `exec_command` | Shell | 执行命令，带超时和安全检查 |
-| `get_mindbot_runtime_info` | 系统 | 获取运行时配置、内存、日志等状态 |
-| `web_search` | Web | 网络搜索（需配置 Provider）|
-
-## LLM Provider
-
-### 模型格式
-
-`instance_name/model_id`（如 `local-ollama/qwen3`、`moonshot/kimi-k2.5`）
-
-### 环境变量替换
-
-配置中可以使用 `{env:VAR_NAME}` 语法引用环境变量：
-
-```jsonc
-{
-  "api_key": "{env:OPENAI_API_KEY}"
-}
-```
-
-### Ollama（本地）
-
-```jsonc
-{
-  "providers": {
-    "local-ollama": {
-      "type": "ollama",
-      "endpoints": [{
-        "base_url": "http://localhost:11434",
-        "models": [
-          { "id": "qwen3", "role": "chat", "level": "medium" }
-        ]
-      }]
-    }
-  }
-}
-```
-
-### OpenAI / 兼容服务
-
-```jsonc
-{
-  "providers": {
-    "openai": {
-      "type": "openai",
-      "endpoints": [{
-        "base_url": "https://api.openai.com/v1",
-        "api_key": "{env:OPENAI_API_KEY}",
-        "models": [
-          { "id": "gpt-4", "role": "chat", "level": "high", "vision": true }
-        ]
-      }]
-    },
-    "deepseek": {
-      "type": "openai",
-      "endpoints": [{
-        "base_url": "https://api.deepseek.com/v1",
-        "api_key": "{env:DEEPSEEK_API_KEY}",
-        "models": [
-          { "id": "deepseek-chat", "role": "chat", "level": "high" }
-        ]
-      }]
-    }
-  }
-}
-```
-
-### 多端点配置（负载均衡/故障转移）
-
-```jsonc
-{
-  "providers": {
-    "moonshot": {
-      "type": "openai",
-      "strategy": "round-robin",
-      "endpoints": [
-        {
-          "base_url": "https://api.moonshot.cn/v1",
-          "api_key": "{env:MOONSHOT_KEY_1}",
-          "weight": 2,
-          "models": [{ "id": "kimi-k2.5", "level": "high" }]
-        },
-        {
-          "base_url": "https://api.moonshot.cn/v1",
-          "api_key": "{env:MOONSHOT_KEY_2}",
-          "weight": 1,
-          "models": [{ "id": "kimi-k2.5", "level": "high" }]
-        }
-      ]
-    }
-  }
-}
-```
-
-## 数据目录
-
-```
-~/.mindbot/
-├── settings.json         # 用户配置（JSON/JSONC）
-├── SYSTEM.md             # 系统提示词
-├── skills/               # 自定义技能
-├── memory/               # Markdown 记忆存储
-├── history/              # CLI 历史记录
-├── workspace/            # 默认工作空间
-├── data/
-│   ├── memory.db         # 记忆数据库
-│   └── journal/          # 会话记录
-├── logs/                 # 日志文件
-└── sessions/             # 会话存储
-```
-
-## 项目结构
-
-```
-mindbot/
-├── src/mindbot/
-│   ├── bot.py            # 对外主入口 MindBot
-│   ├── agent/            # Agent 编排与执行
-│   ├── context/          # 上下文与消息模型
-│   ├── memory/           # 记忆系统
-│   ├── capability/       # 能力层（含 tooling backend）
-│   ├── providers/        # LLM 提供商适配
-│   ├── routing/          # 模型路由
-│   ├── channels/         # CLI / HTTP / Feishu / Telegram
-│   ├── bus/              # 消息总线
-│   ├── session/          # 会话存储与类型
-│   ├── generation/       # 动态工具生成
-│   ├── builders/         # 构建器
-│   ├── multimodal/       # 多模态支持
-│   ├── cron/             # 定时任务
-│   ├── config/           # 配置模型与加载（JSON/JSONC）
-│   ├── cli/              # CLI 命令实现
-│   ├── tools/            # 内置工具（文件/Shell/运行时）
-│   └── utils/            # 工具函数
-├── docs/                 # 文档
-├── tests/                # 测试
-├── examples/             # 示例代码
-└── pyproject.toml        # 项目配置
-```
-
-## 通道配置
-
-### 飞书
-
-```jsonc
+```json
 {
   "channels": {
     "feishu": {
       "enabled": true,
       "app_id": "cli_xxx",
       "app_secret": "xxx",
-      "encrypt_key": "xxx",
-      "verification_token": "xxx"
+      "encrypt_key": "",
+      "verification_token": ""
     }
   }
 }
 ```
 
-飞书通道支持原生附件发送。出站消息中：
+> 长连接模式无需公网 IP，飞书通过 WebSocket 推送消息。
 
-- `content` 会渲染为飞书卡片消息
-- `media` 可以放本地文件路径列表，通道会先上传再发送原生 `image` 或 `file` 消息
+**3. 启动**
 
-```python
-from mindbot.agent.models import AgentResponse
-from mindbot.bus import OUTBOUND_MESSAGE_METADATA_KEY
-
-response = AgentResponse(
-    content="报告已生成",
-    metadata={
-        OUTBOUND_MESSAGE_METADATA_KEY: {
-            "media": ["/tmp/report.pdf"],
-        }
-    },
-)
-```
-
-### HTTP
-
-```jsonc
-{
-  "channels": {
-    "http": {
-      "enabled": true,
-      "host": "0.0.0.0",
-      "port": 31211
-    }
-  }
-}
+```bash
+mindbot serve
 ```
 
 ### Telegram
 
-```jsonc
+```bash
+# 从 @BotFather 获取 Token
+export TELEGRAM_BOT_TOKEN=your-token
+
+# 配置
 {
   "channels": {
     "telegram": {
@@ -736,6 +262,110 @@ response = AgentResponse(
   }
 }
 ```
+
+---
+
+## 文档导航
+
+| 主题 | 链接 |
+|------|------|
+| 快速开始 | [docs/guide/quickstart.md](docs/guide/quickstart.md) |
+| 配置参考 | [docs/configuration/index.md](docs/configuration/index.md) |
+| 架构文档 | [docs/architecture/overview.md](docs/architecture/overview.md) |
+| 示例代码 | [docs/guide/examples.md](docs/guide/examples.md) |
+| CLI 命令 | [docs/guide/cli-reference.md](docs/guide/cli-reference.md) |
+| Skills 机制 | [docs/guide/skills.md](docs/guide/skills.md) |
+| Benchmark | [docs/testing/toolcall15.md](docs/testing/toolcall15.md) |
+
+---
+
+## 项目结构
+
+```
+mindbot/
+├── src/mindbot/
+│   ├── bot.py            # 对外主入口
+│   ├── agent/            # Agent 编排与执行
+│   ├── providers/        # LLM 提供商适配
+│   ├── routing/          # 模型路由
+│   ├── memory/           # 记忆系统
+│   ├── capability/       # 能力层
+│   ├── channels/         # 多通道支持
+│   ├── config/           # 配置管理
+│   └── tools/            # 内置工具
+├── docs/                 # 文档
+├── tests/                # 测试
+└── examples/             # 示例代码
+```
+
+---
+
+## 架构设计
+
+MindBot 采用 **五层分层架构**，各层之间通过明确的边界规则和单向依赖关系进行解耦。
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  L1 接口/传输层                                              │
+│  channels/* + bus/* + cli/*                                 │
+│  接入外部通道（CLI、HTTP、飞书），通过 MessageBus 解耦        │
+├─────────────────────────────────────────────────────────────┤
+│  L2 应用/编排层                                              │
+│  bot.py + agent/core.py + agent/agent.py + turn_engine.py   │
+│  对话主链路编排：组装输入、驱动 TurnEngine 循环、持久化提交   │
+├─────────────────────────────────────────────────────────────┤
+│  L3 对话领域层                                               │
+│  context/manager.py + context/models.py + compression.py    │
+│  7 块上下文管理、消息模型、token 预算分配                     │
+├─────────────────────────────────────────────────────────────┤
+│  L4 能力与记忆层                                             │
+│  capability/* + memory/* + generation/* + skills/*          │
+│  工具执行、记忆检索、动态工具生成、技能注册与渲染             │
+├─────────────────────────────────────────────────────────────┤
+│  L5 基础设施适配层                                           │
+│  providers/* + routing/* + config/*                         │
+│  LLM Provider 适配、模型路由选择、配置加载与热更新            │
+└─────────────────────────────────────────────────────────────┘
+```
+
+| 层级 | 核心职责 | 关键模块 |
+|------|---------|---------|
+| L1 | 接入外部通道，消息解耦 | `channels/*`, `bus/*`, `cli/*` |
+| L2 | 对话主链路编排 | `bot.py`, `agent/core.py`, `agent/turn_engine.py` |
+| L3 | 上下文管理、token 预算 | `context/manager.py`, `context/models.py` |
+| L4 | 工具执行、记忆检索 | `capability/*`, `memory/*`, `skills/*` |
+| L5 | LLM Provider、模型路由 | `providers/*`, `routing/*`, `config/*` |
+
+### 核心设计原则
+
+- **仅两个聊天接口**：`chat()` 和 `chat_stream()`，所有通道必须通过这两个方法进入主链路
+- **全异步架构**：所有 I/O 操作均为 `async`，不阻塞事件循环
+- **7 块上下文管理**：system_identity、skills_overview、skills_detail、memory、conversation、intent_state、user_input
+- **CapabilityFacade 统一调度**：所有工具执行通过统一入口
+
+---
+
+## 内置工具
+
+| 工具 | 类别 | 说明 |
+|------|------|------|
+| `read_file` | 文件 | 读取文件内容，支持 offset/limit 分页 |
+| `write_file` | 文件 | 创建或覆盖文件，自动创建父目录 |
+| `edit_file` | 文件 | 精确文本替换，支持 replace_all |
+| `list_directory` | 文件 | 列出目录内容，支持 glob 模式匹配 |
+| `file_info` | 文件 | 获取文件/目录基本信息（大小、类型） |
+| `exec_command` | Shell | 执行 Shell 命令，带超时和安全检查 |
+| `get_mindbot_runtime_info` | 系统 | 获取运行时状态（配置、内存、日志） |
+| `fetch_url` | Web | 获取 URL 内容，自动去除 HTML 标签 |
+
+### 路径安全策略
+
+- **workspace**: 默认工作目录，所有相对路径以此解析
+- **restrict_to_workspace**: 启用时，文件工具只能在允许根目录内运行
+- **system_path_whitelist**: 额外允许的系统路径（如 `~/.mindbot`）
+- **shell_execution.policy**: Shell 执行策略（`cwd_guard` 或 `sandboxed`）
+
+---
 
 ## License
 
