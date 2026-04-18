@@ -31,28 +31,37 @@ class TestOllamaProviderInit:
             assert provider._base_url == "http://localhost:11434"
 
     def test_init_with_base_url(self) -> None:
-        """Should use custom base_url."""
+        """Should use custom base_url (lazy initialization)."""
         param = OllamaProviderParam(model="qwen3:1.7b", base_url="http://192.168.1.100:11434")
         with patch("httpx.AsyncClient") as mock_client:
-            OllamaProvider(param)
+            provider = OllamaProvider(param)
+            # Client is not created during init (lazy initialization)
+            mock_client.assert_not_called()
+            # Trigger client creation via _get_client
+            provider._get_client()
             mock_client.assert_called_once()
             call_kwargs = mock_client.call_args[1]
             assert call_kwargs["base_url"].rstrip("/") == "http://192.168.1.100:11434"
 
     def test_init_with_api_key(self) -> None:
-        """Should set Authorization header when api_key is provided."""
+        """Should set Authorization header when api_key is provided (lazy initialization)."""
         param = OllamaProviderParam(model="qwen3:1.7b", api_key="test-key")
         with patch("httpx.AsyncClient") as mock_client:
-            OllamaProvider(param)
+            provider = OllamaProvider(param)
+            # Client is not created during init (lazy initialization)
+            mock_client.assert_not_called()
+            # Trigger client creation via _get_client
+            provider._get_client()
             call_kwargs = mock_client.call_args[1]
             assert "Authorization" in call_kwargs["headers"]
 
     def test_init_missing_httpx_raises(self) -> None:
-        """Should raise ImportError if httpx is not installed."""
+        """Should raise ImportError if httpx is not installed when _get_client is called."""
         param = OllamaProviderParam(model="qwen3:1.7b")
+        provider = OllamaProvider(param)
         with patch.dict("sys.modules", {"httpx": None}):
-            with pytest.raises(ImportError, match="Install 'httpx'"):
-                OllamaProvider(param)
+            with pytest.raises(ModuleNotFoundError):
+                provider._get_client()
 
 
 class TestOllamaProviderChat:

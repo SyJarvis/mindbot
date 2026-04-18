@@ -12,8 +12,16 @@ from typing import Callable
 class OllamaSetup:
     """Handles Ollama installation, model downloading and service management."""
 
-    DEFAULT_MODEL = "qwen3.5:2b"
+    DEFAULT_MODEL = "qwen3:2b"
     OLLAMA_API_URL = "http://localhost:11434"
+
+    # Recommended models with approximate sizes
+    RECOMMENDED_MODELS = [
+        {"name": "qwen3:2b", "size": "~1.2GB", "description": "轻量快速，推荐新用户"},
+        {"name": "qwen3:8b", "size": "~4.7GB", "description": "更强推理能力"},
+        {"name": "llama3:8b", "size": "~4.7GB", "description": "Meta经典模型"},
+        {"name": "gemma3:4b", "size": "~2.5GB", "description": "Google轻量模型"},
+    ]
 
     def __init__(self, progress_callback: Callable[[str], None] | None = None):
         """Initialize OllamaSetup.
@@ -147,6 +155,40 @@ class OllamaSetup:
         except Exception as e:
             self.progress(f"Failed to start Ollama service: {e}")
             return False
+
+    def list_local_models(self) -> list[dict]:
+        """Get list of locally available ollama models with details.
+
+        Returns:
+            List of dicts with model name, size, and modified time.
+        """
+        try:
+            result = subprocess.run(
+                ["ollama", "list"],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            lines = result.stdout.strip().split("\n")
+            if len(lines) <= 1:
+                return []
+
+            # Parse header and data rows
+            # Format: NAME    ID    SIZE    MODIFIED
+            models = []
+            for line in lines[1:]:
+                if not line.strip():
+                    continue
+                parts = line.split()
+                if len(parts) >= 3:
+                    models.append({
+                        "name": parts[0],
+                        "size": parts[2] if len(parts) >= 3 else "unknown",
+                        "modified": parts[3] if len(parts) >= 4 else "",
+                    })
+            return models
+        except subprocess.CalledProcessError:
+            return []
 
     def is_model_downloaded(self, model: str) -> bool:
         """Check if a model is already downloaded."""

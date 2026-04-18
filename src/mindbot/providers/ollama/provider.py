@@ -34,20 +34,36 @@ class OllamaProvider(Provider):
     """
 
     def __init__(self, param: OllamaProviderParam) -> None:
-        try:
-            import httpx  # noqa: F811
-        except ImportError as exc:
-            raise ImportError("Install 'httpx': pip install httpx") from exc
-
         self._param = param
         self._base_url = param.base_url.rstrip("/")
-        headers: dict[str, str] = {}
+        self._headers: dict[str, str] = {}
         if param.api_key:
-            headers["Authorization"] = f"Bearer {param.api_key}"
-        self._async_client = __import__("httpx").AsyncClient(
-            base_url=self._base_url, timeout=120.0, headers=headers or None
-        )
+            self._headers["Authorization"] = f"Bearer {param.api_key}"
+        self._async_client: Any = None  # 延迟创建
         self._bound_tools: list[Any] | None = None
+
+    def _get_client(self) -> Any:
+        """Get or create httpx.AsyncClient, handling event loop changes."""
+        import httpx
+
+        # 如果 client 不存在，或者已关闭，重新创建
+        if self._async_client is None or self._async_client.is_closed:
+            self._async_client = httpx.AsyncClient(
+                base_url=self._base_url,
+                timeout=120.0,
+                headers=self._headers or None,
+            )
+
+        return self._async_client
+
+    # ------------------------------------------------------------------
+    # Lifecycle
+    # ------------------------------------------------------------------
+
+    async def aclose(self) -> None:
+        """Close the httpx client if it exists."""
+        if self._async_client is not None and not self._async_client.is_closed:
+            await self._async_client.aclose()
 
     # ------------------------------------------------------------------
     # Helpers
@@ -175,7 +191,7 @@ class OllamaProvider(Provider):
     ) -> ChatResponse:
         ollama_msgs = self._to_ollama_messages(messages)
         body = self._build_body(ollama_msgs, model, tools, **kwargs)
-        resp = await self._async_client.post("/api/chat", json=body)
+        resp = await self._get_client().post("/api/chat", json=body)
         resp.raise_for_status()
         return self._parse_response(resp.json(), model)
 
@@ -193,7 +209,7 @@ class OllamaProvider(Provider):
 
         ollama_msgs = self._to_ollama_messages(messages)
         body = self._build_body(ollama_msgs, model, None, stream=True)
-        async with self._async_client.stream("POST", "/api/chat", json=body) as resp:
+        async with self._get_client().stream("POST", "/api/chat", json=body) as resp:
             resp.raise_for_status()
             async for line in resp.aiter_lines():
                 if not line:
@@ -207,7 +223,7 @@ class OllamaProvider(Provider):
         model = kwargs.get("model", self._param.model)
         results: list[list[float]] = []
         for text in texts:
-            resp = await self._async_client.post(
+            resp = await self._get_client().post(
                 "/api/embeddings", json={"model": model, "prompt": text}
             )
             resp.raise_for_status()
@@ -252,7 +268,7 @@ class OllamaProvider(Provider):
     async def list_local_models(self) -> list[str]:
         """Async listing of local models via /api/tags."""
         try:
-            resp = await self._async_client.get("/api/tags")
+            resp = await self._get_client().get("/api/tags")
             resp.raise_for_status()
             data = resp.json()
             models: list[str] = []
@@ -286,7 +302,7 @@ class OllamaProvider(Provider):
         if method == "api":
             async def _pull_api():
                 try:
-                    async with self._async_client.stream("POST", "/api/pull", json={"model": model, "stream": True}) as resp:
+                    async with self._get_client().stream("POST", "/api/pull", json={"model": model, "stream": True}) as resp:
                         resp.raise_for_status()
                         async for text in resp.aiter_text():
                             if not text:

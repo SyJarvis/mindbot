@@ -9,7 +9,7 @@
           "weight": 1,
           "models": [
             {
-              "id": "qwen3.5:2b",
+              "id": "qwen3:2b",
               "role": "chat",
               "level": "medium",
               "vision": false
@@ -20,7 +20,7 @@
     }
   },
   "agent": {
-    "model": "local-ollama/qwen3.5:2b",
+    "model": "local-ollama/qwen3:2b",
     "workspace": "~/.mindbot/workspace",
     "system_path_whitelist": [
       "~/.mindbot"
