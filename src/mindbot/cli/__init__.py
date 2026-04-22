@@ -290,9 +290,6 @@ def _copy_builtin_skills(skills_dir: Path) -> None:
 
 def _copy_tree(src, dst: Path) -> None:
     """Recursively copy a directory tree from an importlib resource path."""
-    from importlib import resources
-    import shutil
-
     dst.mkdir(parents=True, exist_ok=True)
     for entry in src.iterdir():
         child = dst / entry.name
@@ -314,6 +311,114 @@ def _find_config_file() -> Path | None:
 # ======================================================================
 # generate-config / onboard
 # ======================================================================
+
+def _prompt_download_model(setup: Any, console: Console) -> str | None:
+    """Prompt user to select a model from recommended list to download.
+
+    Returns:
+        Selected model name or None if skipped.
+    """
+    from rich.console import Console
+
+    console = Console()
+    console.print("\n[bold]Recommended models to download:[/bold]")
+    for i, m in enumerate(setup.RECOMMENDED_MODELS, 1):
+        marker = "[green]← 推荐[/green]" if m["name"] == setup.DEFAULT_MODEL else ""
+        console.print(f"  [{i}] {m['name']} ({m['size']}) - {m['description']} {marker}")
+
+    console.print(f"  [{len(setup.RECOMMENDED_MODELS) + 1}] Enter custom model name")
+    console.print(f"  [{len(setup.RECOMMENDED_MODELS) + 2}] Skip (configure manually later)")
+
+    choice = typer.prompt(
+        "Select model to download",
+        default="1",
+        show_default=True,
+    )
+
+    try:
+        idx = int(choice)
+        if 1 <= idx <= len(setup.RECOMMENDED_MODELS):
+            model = setup.RECOMMENDED_MODELS[idx - 1]["name"]
+            console.print(f"[yellow]Downloading {model}...[/yellow]")
+            if setup.pull_model(model):
+                console.print(f"[green]✓[/green] Model {model} downloaded")
+                return model
+            else:
+                console.print(f"[red]✗[/red] Failed to download {model}")
+                console.print(f"[dim]You can download manually: ollama pull {model}[/dim]")
+                return None
+        elif idx == len(setup.RECOMMENDED_MODELS) + 1:
+            # Custom model name
+            custom = typer.prompt("Enter model name (e.g., llama3:8b)")
+            if custom.strip():
+                console.print(f"[yellow]Downloading {custom}...[/yellow]")
+                if setup.pull_model(custom.strip()):
+                    console.print(f"[green]✓[/green] Model {custom} downloaded")
+                    return custom.strip()
+                else:
+                    console.print(f"[red]✗[/red] Failed to download {custom}")
+                    return None
+        else:
+            console.print("[yellow]Skipping model download[/yellow]")
+            return None
+    except ValueError:
+        console.print("[red]Invalid choice[/red]")
+        return None
+
+
+def _update_settings_model(config_file: Path, model: str) -> None:
+    """Update both agent.model and providers model configuration.
+
+    Args:
+        config_file: Path to settings.json
+        model: Model name (e.g., 'qwen3:2b')
+    """
+    import json
+
+    try:
+        data = json.loads(config_file.read_text(encoding="utf-8"))
+
+        # Update agent.model with full instance/model format
+        agent_data = data.setdefault("agent", {})
+        agent_data["model"] = f"local-ollama/{model}"
+
+        # Update providers.local-ollama models list
+        providers = data.setdefault("providers", {})
+        ollama_provider = providers.setdefault("local-ollama", {})
+        ollama_provider.setdefault("type", "ollama")
+        ollama_provider.setdefault("strategy", "round-robin")
+        endpoints = ollama_provider.setdefault("endpoints", [])
+
+        # Ensure at least one endpoint exists
+        if not endpoints:
+            endpoints.append({
+                "base_url": "http://localhost:11434",
+                "weight": 1,
+                "models": [],
+            })
+
+        # Update or create the model entry
+        models_list = endpoints[0].setdefault("models", [])
+        if models_list:
+            # Update existing model entry
+            models_list[0]["id"] = model
+            # Check if model name suggests vision capability
+            if "vl" in model.lower() or "vision" in model.lower():
+                models_list[0]["vision"] = True
+        else:
+            # Create new model entry
+            models_list.append({
+                "id": model,
+                "role": "chat",
+                "level": "medium",
+                "vision": "vl" in model.lower() or "vision" in model.lower(),
+            })
+
+        config_file.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    except Exception:
+        # Silently ignore if settings.json cannot be updated
+        pass
+
 
 @app.command("generate-config")
 @app.command("onboard")  # Keep onboard for backward compatibility
@@ -342,7 +447,7 @@ def onboard(
     console.print(f"[green]✓[/green] Created {system_file}")
 
     # Create workspace sub-directories
-    for d in ("skills", "memory", "history", "cron", "workspace"):
+    for d in ("skills", "memory", "history", "cron", "workspace", "data"):
         (root / d).mkdir(exist_ok=True)
 
     # Copy built-in skills from templates (skip if user skill already exists)
@@ -351,6 +456,7 @@ def onboard(
     console.print(f"[green]✓[/green] Initialized workspace at {root}")
 
     # Ollama setup
+    selected_model: str | None = None
     if not skip_ollama:
         console.print("\n[bold]Checking Ollama setup...[/bold]")
         try:
@@ -373,30 +479,67 @@ def onboard(
                         console.print("[red]✗[/red] Failed to start Ollama service")
                         console.print("[yellow]Please start Ollama manually: ollama serve[/yellow]")
 
-                if setup.is_model_downloaded("qwen3.5:2b"):
-                    console.print("[green]✓[/green] Model qwen3.5:2b is ready")
+                # Get local models
+                local_models = setup.list_local_models()
+
+                if local_models:
+                    # User has models - let them choose
+                    console.print("\n[bold]Local models found:[/bold]")
+                    for i, m in enumerate(local_models, 1):
+                        marker = ""
+                        if m["name"] == setup.DEFAULT_MODEL:
+                            marker = "[green]← 推荐[/green]"
+                        console.print(f"  [{i}] {m['name']} ({m['size']}) {marker}")
+
+                    console.print(f"  [{len(local_models) + 1}] Download a new model")
+                    console.print(f"  [{len(local_models) + 2}] Skip model selection")
+
+                    choice = typer.prompt(
+                        "Select model",
+                        default="1",
+                        show_default=True,
+                    )
+
+                    try:
+                        idx = int(choice)
+                        if 1 <= idx <= len(local_models):
+                            selected_model = local_models[idx - 1]["name"]
+                            console.print(f"[green]✓[/green] Selected model: {selected_model}")
+                        elif idx == len(local_models) + 1:
+                            # Download new model
+                            selected_model = _prompt_download_model(setup, console)
+                        else:
+                            console.print("[yellow]Skipping model selection[/yellow]")
+                    except ValueError:
+                        console.print("[red]Invalid choice[/red]")
                 else:
-                    console.print("[yellow]⚠[/yellow] Model qwen3.5:2b not found, downloading...")
-                    if setup.pull_model("qwen3.5:2b"):
-                        console.print("[green]✓[/green] Model qwen3.5:2b downloaded")
-                    else:
-                        console.print("[red]✗[/red] Failed to download model")
-                        console.print("[yellow]You can download it manually: ollama pull qwen3.5:2b[/yellow]")
+                    # No local models - prompt to download
+                    console.print("[yellow]⚠[/yellow] No local models found")
+                    selected_model = _prompt_download_model(setup, console)
+
             else:
                 console.print("[yellow]⚠[/yellow] Ollama not found")
                 if typer.confirm("Install Ollama now?"):
                     if setup.install():
-                        if setup.start_service() and setup.pull_model("qwen3.5:2b"):
-                            console.print("[green]✓[/green] Ollama setup complete")
+                        if setup.start_service():
+                            selected_model = _prompt_download_model(setup, console)
+                            if selected_model and setup.pull_model(selected_model):
+                                console.print("[green]✓[/green] Ollama setup complete")
                         else:
-                            console.print("[yellow]Please complete Ollama setup manually[/yellow]")
+                            console.print("[yellow]Please start Ollama manually and download a model[/yellow]")
                     else:
                         console.print("[yellow]Please install Ollama manually from https://ollama.com[/yellow]")
                 else:
                     console.print("[yellow]Skipped Ollama installation[/yellow]")
                     console.print("[dim]You can install it later from https://ollama.com[/dim]")
+
         except Exception as e:
             console.print(f"[yellow]⚠ Ollama check failed: {e}[/yellow]")
+
+    # Write selected model to settings.json
+    if selected_model:
+        _update_settings_model(config_file, selected_model)
+        console.print(f"[green]✓[/green] Model {selected_model} saved to settings.json")
 
     console.print("\n[bold]Next steps:[/bold]")
     console.print("  1. Edit [cyan]~/.mindbot/settings.json[/cyan] to configure providers")

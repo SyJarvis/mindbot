@@ -20,7 +20,7 @@ from mindbot.utils import estimate_tokens, get_logger
 if TYPE_CHECKING:
     from mindbot.config.schema import SkillsConfig
     from mindbot.memory.manager import MemoryManager
-    from mindbot.memory.types import MemoryChunk
+    from mindbot.memory.types import MemoryShard
     from mindbot.skills.registry import SkillRegistry
 
 from mindbot.skills.render import render_skills_detail, render_skills_overview
@@ -170,17 +170,17 @@ class InputBuilder:
             self._ctx.set_memory_messages([])
             return
 
-        chunks: list[MemoryChunk] = []
+        shards: list[MemoryShard] = []
         try:
-            chunks = self._memory.search(query, top_k=self._memory_top_k)
+            shards = self._memory.search(query, top_k=self._memory_top_k)
         except Exception:
             logger.debug("Memory search failed; continuing without memories")
 
-        if not chunks:
+        if not shards:
             self._ctx.set_memory_messages([])
             return
 
-        ctx_text = "\n".join(f"- {c.text}" for c in chunks)
+        ctx_text = "\n".join(f"- {s.text}" for s in shards)
         memory_msg = Message(
             role="system",
             content=f"Relevant context from memory:\n{ctx_text}",

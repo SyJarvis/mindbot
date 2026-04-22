@@ -9,7 +9,7 @@
           "weight": 1,
           "models": [
             {
-              "id": "qwen3.5:2b",
+              "id": "qwen3:8b",
               "role": "chat",
               "level": "medium",
               "vision": false
@@ -20,7 +20,7 @@
     }
   },
   "agent": {
-    "model": "local-ollama/qwen3.5:2b",
+    "model": "local-ollama/qwen3:8b",
     "workspace": "~/.mindbot/workspace",
     "system_path_whitelist": [
       "~/.mindbot"
@@ -35,10 +35,16 @@
     "temperature": 0.7,
     "max_tokens": 8192,
     "max_tool_iterations": 20,
+    "max_sessions": 1000,
+    "memory_top_k": 5,
+    "system_prompt": "",
+    "tool_persistence": "none",
     "approval": {
       "security": "allowlist",
       "ask": "off",
-      "timeout": 300
+      "timeout": 300,
+      "whitelist": {},
+      "dangerous_tools": ["delete_file", "remove_file", "rm", "shell", "execute_command"]
     }
   },
   "routing": {
@@ -67,9 +73,41 @@
     ]
   },
   "memory": {
+    "base_path": "~/.mindbot/memory",
+    "content_path": "~/.mindbot/memory/content",
+    "default_agent_id": "default",
+    "default_agent_name": "MindBot",
+    "vector": {
+      "enabled": true,
+      "backend": "lancedb",
+      "persist_path": "~/.mindbot/vectors",
+      "dimension": 512,
+      "embedder_type": "openai",
+      "embedder_model": "text-embedding-3-small",
+      "merge_threshold": 0.85,
+      "correct_threshold": 0.90,
+      "forget_threshold": 0.70,
+      "delete_threshold": 0.85,
+      "archive_threshold": 0.75
+    },
+    "forget_policy": {
+      "access_weight": 0.25,
+      "age_weight": 0.20,
+      "redundancy_weight": 0.25,
+      "density_weight": 0.15,
+      "source_weight": 0.15,
+      "max_age_days": 30,
+      "recent_protection_days": 3,
+      "cycle_interval_hours": 24
+    },
+    "retrieval_top_k": 5,
+    "vector_weight": 0.5,
+    "keyword_weight": 0.35,
+    "recency_weight": 0.15,
     "storage_path": "~/.mindbot/data/memory.db",
     "markdown_path": "~/.mindbot/data/memory",
-    "short_term_retention_days": 7
+    "short_term_retention_days": 7,
+    "enable_fts": true
   },
   "skills": {
     "enabled": true,
@@ -105,6 +143,13 @@
     },
     "cli": {
       "enabled": false
+    },
+    "feishu": {
+      "enabled": false,
+      "app_id": "",
+      "app_secret": "",
+      "encrypt_key": "",
+      "verification_token": ""
     }
   }
 }

@@ -22,7 +22,6 @@ if TYPE_CHECKING:
 
 from mindbot.routing.router import ModelRouter
 from mindbot.routing.endpoint import EndpointManager
-from mindbot.routing.models import RoutingDecision
 from mindbot.providers.adapter import ProviderAdapter
 
 
@@ -228,9 +227,24 @@ class RoutingProviderAdapter:
             if endpoint.max_tokens is not None:
                 params["max_tokens"] = endpoint.max_tokens
 
+            # Extract vision flag from model config
+            vision_enabled = self._get_model_vision_flag(endpoint, model_id)
+            if vision_enabled:
+                params["vision_enabled"] = True
+
             # Use provider_cfg.type as the driver type
             self._adapters[key] = ProviderAdapter(provider_cfg.type, params)
         return self._adapters[key]
+
+    def _get_model_vision_flag(self, endpoint: Any, model_id: str) -> bool:
+        """Extract vision flag from model config in endpoint."""
+        for model in endpoint.models:
+            if isinstance(model, str):
+                if model == model_id:
+                    return False
+            elif hasattr(model, "id") and model.id == model_id:
+                return getattr(model, "vision", False)
+        return False
 
     @staticmethod
     def _parse_model_ref(model_ref: str) -> tuple[str, str]:

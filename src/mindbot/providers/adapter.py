@@ -6,7 +6,6 @@ from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING, Any
 
 from mindbot.providers.factory import ProviderFactory
-from mindbot.providers.param import BaseProviderParam
 
 if TYPE_CHECKING:
     from mindbot.context.models import ChatResponse, Message, ProviderInfo

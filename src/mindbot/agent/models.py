@@ -5,13 +5,12 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable
+from typing import Any
 
 from mindbot.context.models import Message, ToolCall, ToolResult
 
 # Import approval-related enums from config to avoid circular imports
 # and keep a single source of truth
-from mindbot.config.schema import ToolSecurityLevel, ToolAskMode
 
 
 # ---------------------------------------------------------------------------

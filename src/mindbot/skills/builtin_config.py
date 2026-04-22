@@ -9,7 +9,6 @@
 from typing import Any
 
 from mindbot.config import AgentConfigIntegration
-from mindbot.auth.manager import AuthManager
 from mindbot.skills.models import Skill, SkillParameter
 
 

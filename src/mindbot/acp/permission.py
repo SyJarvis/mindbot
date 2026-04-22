@@ -9,10 +9,6 @@ from __future__ import annotations
 
 from loguru import logger
 
-from mindbot.acp.types import (
-    PermissionOption,
-    RequestPermissionParams,
-)
 
 
 class PermissionResolver:

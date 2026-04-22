@@ -16,7 +16,6 @@ from mindbot.capability.models import (
     CapabilityConflictError,
     CapabilityNotFoundError,
     CapabilityQuery,
-    CapabilityType,
 )
 from mindbot.utils import get_logger
 

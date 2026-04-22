@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from mindbot.agent.input_builder import InputBuilder
-from mindbot.agent.models import AgentEvent, AgentResponse, StopReason
+from mindbot.agent.models import AgentEvent, AgentResponse
 from mindbot.agent.persistence_writer import PersistenceWriter, ToolPersistence
 from mindbot.agent.turn_engine import TurnEngine
 from mindbot.capability.backends.tooling import ToolRegistry

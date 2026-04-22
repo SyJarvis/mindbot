@@ -20,9 +20,8 @@ from mindbot.agent.models import (
     AgentEvent,
     ApprovalDecision,
     ToolApprovalRequest,
-    ToolAskMode,
-    ToolSecurityLevel,
 )
+from mindbot.config.schema import ToolAskMode, ToolSecurityLevel
 
 
 @dataclass

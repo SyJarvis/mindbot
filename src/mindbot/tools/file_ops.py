@@ -5,7 +5,6 @@ from __future__ import annotations
 import fnmatch
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any
 
 from mindbot.capability.backends.tooling.models import Tool
 from mindbot.tools.path_policy import (
