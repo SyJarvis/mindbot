@@ -5,7 +5,7 @@
 </div>
 
 <p align="center">
-  <a href="https://github.com/SyJarvis/mindbot"><img src="https://img.shields.io/badge/Version-0.3.3-blue.svg" alt="Version"></a>
+  <a href="https://github.com/SyJarvis/mindbot"><img src="https://img.shields.io/badge/Version-0.3.4-blue.svg" alt="Version"></a>
   <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3.10+-blue?logo=python" alt="Python"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License"></a>
 </p>
@@ -18,7 +18,9 @@
 
 ## 📢 News
 
-- **2026-04-10** 🚀 **实时配置系统** — ConfigBus 事件总线、AuthManager 授权管理、配置持久化、多实例同步
+- **2026-04-21** 📦 **uv 包管理** — 迁移到 uv 管理依赖，更快的安装和锁定
+- **2026-04-20** 🧠 **Memory 重构** — 四级向量记忆系统，支持语义检索和智能遗忘
+- **2026-04-10** 🚀 **实时配置系统** — ConfigBus 事件总线、AuthManager 授权管理
 - **2026-04-09** 🏗️ **ACP 协议支持** — Agent Client Protocol 通道，支持 Claude Code、Codex 等外部 Agent
 - **2026-04-02** 📊 **Agent Benchmark** — ToolCall-15 和 Real-Tools benchmark 框架
 
@@ -52,7 +54,15 @@
 ```bash
 git clone https://github.com/SyJarvis/mindbot.git
 cd mindbot
+
+# 使用 uv（推荐）
+uv sync                    # 安装核心依赖
+uv sync --extra dev        # 安装开发依赖（测试等）
+uv sync --extra feishu     # 安装飞书通道依赖
+
+# 或使用 pip
 pip install -e .
+pip install -e ".[dev]"    # 开发依赖
 ```
 
 ---

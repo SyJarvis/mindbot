@@ -1,6 +1,6 @@
 [project]
 name = "mindbot"
-version = "0.3.3"
+version = "0.3.4"
 description = "基于 **Python + asyncio** 的模块化 AI Agent 框架，支持多 Provider、动态路由、流式响应和工具确认机制。"
 authors = [
     {name = "MindBot Team"}
@@ -28,21 +28,46 @@ dependencies = [
     "aiohttp>=3.9",
     "openai",
     "watchfiles>=0.20",
+    # Vector memory dependencies
+    "lancedb>=0.27",
+    "pyarrow>=21.0",
+    # Optional: sentence-transformers for local embedding
+    # "sentence-transformers>=2.0",
 ]
 
 [project.scripts]
 mindbot = "mindbot.cli:app"
 
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-asyncio>=0.21",
+    "pytest-cov>=4.0",
+]
+feishu = [
+    "lark-oapi>=1.0",
+]
+
 [build-system]
-requires = ["setuptools>=61.0"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling>=1.0"]
+build-backend = "hatchling.build"
 
-[tool.setuptools.packages.find]
-where = ["src"]
+[tool.hatch.build.targets.wheel]
+packages = ["src/mindbot"]
+artifacts = ["src/mindbot/templates/*", "src/mindbot/templates/**/*"]
 
-[tool.setuptools.package-data]
-mindbot = ["templates/*", "templates/**/*"]
+[tool.hatch.build.targets.sdist]
+include = ["src/mindbot", "README.md", "LICENSE"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
 pythonpath = ["src"]
+collect_ignore_glob = ["tests/benchmarking/*"]
+
+[dependency-groups]
+dev = [
+    "pyflakes>=3.4.0",
+    "ruff>=0.15.11",
+]
