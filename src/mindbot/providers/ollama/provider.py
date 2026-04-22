@@ -5,7 +5,7 @@ from __future__ import annotations
 import copy
 import json
 from collections.abc import AsyncIterator
-from typing import Any, Self, AsyncIterator as _AI, Optional
+from typing import Any, Self, Optional
 import asyncio
 import subprocess
 

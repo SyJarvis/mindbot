@@ -2,7 +2,7 @@
 
 import time
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Optional
 
 from mindbot.config.bus import ConfigBus
 
@@ -11,7 +11,7 @@ from mindbot.config.bus import ConfigBus
 class ToolAuth:
     tool_name: str
     allowed: bool
-    expires_at: float | None = None
+    expires_at: Optional[float] = None
     granted_at: float = field(default_factory=time.time)
 
     def is_expired(self) -> bool:
@@ -46,7 +46,7 @@ class AuthManager:
         user_id: str,
         tool_name: str,
         allowed: bool = True,
-        expires_in: float | None = None,
+        expires_in: Optional[float] = None,
     ) -> None:
         """授权/取消授权 - 立即生效"""
         expires_at = time.time() + expires_in if expires_in else None

@@ -19,7 +19,6 @@ from typing import Iterator
 from mindbot.generation.models import (
     ToolDefinition,
     ToolDefinitionConflictError,
-    ToolDefinitionError,
     ToolDefinitionNotFoundError,
 )
 from mindbot.generation.validator import validate_tool_definition

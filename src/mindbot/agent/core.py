@@ -14,7 +14,7 @@ from collections.abc import AsyncIterator, Callable
 from typing import TYPE_CHECKING, Any
 
 from mindbot.agent.agent import Agent
-from mindbot.agent.models import AgentEvent, AgentResponse, StopReason, TurnResult
+from mindbot.agent.models import AgentEvent, AgentResponse, TurnResult
 from mindbot.builders import create_agent, create_llm
 from mindbot.capability.backends.tooling import ToolRegistry
 from mindbot.config.schema import Config

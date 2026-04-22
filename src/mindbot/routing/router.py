@@ -13,7 +13,7 @@ import re
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from mindbot.config.schema import Config, ModelConfig
+    from mindbot.config.schema import Config
     from mindbot.context.models import Message
 
 from mindbot.routing.models import ModelCandidate, RoutingDecision

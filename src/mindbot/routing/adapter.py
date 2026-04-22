@@ -22,7 +22,6 @@ if TYPE_CHECKING:
 
 from mindbot.routing.router import ModelRouter
 from mindbot.routing.endpoint import EndpointManager
-from mindbot.routing.models import RoutingDecision
 from mindbot.providers.adapter import ProviderAdapter
 
 

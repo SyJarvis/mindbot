@@ -19,9 +19,6 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from mindbot.config.bus import ConfigBus
-from mindbot.auth.manager import AuthManager
-from mindbot.config.persistence import ConfigPersistence
 from mindbot.config.integration import AgentConfigIntegration
 
 app = typer.Typer(help="实时配置系统管理")

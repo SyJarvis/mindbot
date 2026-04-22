@@ -32,7 +32,6 @@ facade to make it visible to the resolution layer.
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 from mindbot.capability.backends.base import ExtensionBackend

@@ -2,7 +2,7 @@
 
 import asyncio
 import logging
-from typing import Any, Protocol
+from typing import Any, Optional, Protocol
 
 from mindbot.config.bus import ConfigBus
 
@@ -31,7 +31,7 @@ class ConfigSync:
     def __init__(
         self,
         bus: ConfigBus,
-        backend: SyncBackend | None = None,
+        backend: Optional[SyncBackend] = None,
         sync_interval: float = 5.0,
     ):
         self.bus = bus
@@ -39,7 +39,7 @@ class ConfigSync:
         self.sync_interval = sync_interval
         self._remote_version = 0
         self._running = False
-        self._sync_task: asyncio.Task | None = None
+        self._sync_task: Optional[asyncio.Task] = None
 
     async def start(self) -> None:
         """启动同步循环"""

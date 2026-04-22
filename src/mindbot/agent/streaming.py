@@ -11,11 +11,10 @@ concerns itself with the LLM call mechanics.
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
 from typing import Any, Callable
 
 from mindbot.agent.models import AgentEvent
-from mindbot.context.models import ChatResponse, Message, ToolCall
+from mindbot.context.models import ChatResponse, Message
 from mindbot.providers.adapter import ProviderAdapter
 from mindbot.utils import get_logger
 

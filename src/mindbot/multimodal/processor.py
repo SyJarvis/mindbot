@@ -7,7 +7,7 @@ import mimetypes
 from pathlib import Path
 
 from mindbot.context.models import ImagePart, TextPart
-from mindbot.multimodal.models import ContentInput, ContentItem, MediaSource, MediaType
+from mindbot.multimodal.models import ContentItem, MediaSource, MediaType
 from mindbot.utils import get_logger
 
 logger = get_logger("multimodal.processor")

@@ -24,13 +24,12 @@ from mindbot.config.schema import ToolApprovalConfig
 from mindbot.agent.input import InputManager
 from mindbot.agent.interrupt import AgentExecution, InterruptException
 from mindbot.agent.models import (
-    AgentDecision,
     AgentEvent,
     AgentResponse,
     StopReason,
 )
 from mindbot.agent.streaming import StreamingExecutor
-from mindbot.context.models import ChatResponse, Message, ToolCall
+from mindbot.context.models import Message, ToolCall
 from mindbot.providers.adapter import ProviderAdapter
 from mindbot.capability.backends.tooling.models import Tool
 from mindbot.utils import get_logger
@@ -39,7 +38,6 @@ from mindbot.utils import get_logger
 # Phase 1; the orchestrator still defaults to the existing ToolRegistry path.
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
-    from mindbot.capability.models import CapabilityQuery
     from mindbot.capability.facade import CapabilityFacade
 
 logger = get_logger("agent.orchestrator")

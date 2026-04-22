@@ -93,7 +93,7 @@ def create_agent(
     memory = None
     if with_memory:
         from mindbot.memory.manager import MemoryManager
-        memory = MemoryManager(
+        memory = MemoryManager.from_legacy_config(
             storage_path=config.memory.storage_path,
             markdown_path=config.memory.markdown_path,
             short_term_retention_days=config.memory.short_term_retention_days,

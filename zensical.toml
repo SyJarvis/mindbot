@@ -45,6 +45,7 @@ nav = [
   ]},
   { "配置" = [
     "configuration/index.md",
+    { "配置指南" = "configuration/guide-zh.md" },
     { "Provider 配置" = "configuration/providers.md" },
     { "安全配置" = "configuration/security.md" },
     { "通道配置" = "configuration/channels-config.md" },

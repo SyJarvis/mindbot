@@ -337,10 +337,6 @@ class MindBot:
         """Register tool."""
         self._agent.register_tool(tool)
 
-    def list_tools(self) -> list[Any]:
-        """List tools."""
-        return self._agent.list_tools()
-
     # ==================================================================
     # Introspection
     # ==================================================================

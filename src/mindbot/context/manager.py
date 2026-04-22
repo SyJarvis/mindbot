@@ -2,14 +2,11 @@
 
 from __future__ import annotations
 
-import json
 import uuid
-from datetime import datetime
-from pathlib import Path
 from dataclasses import dataclass, field
 from typing import Any
 
-from mindbot.config.schema import ContextBlocksConfig, ContextConfig
+from mindbot.config.schema import ContextConfig
 from mindbot.context.checkpoint import Checkpoint
 from mindbot.context.compression import CompressionStrategy, TruncateStrategy
 from mindbot.context.models import Message, MessageRole

@@ -8,7 +8,6 @@ server-to-client requests (permissions, file ops, terminals).
 from __future__ import annotations
 
 import asyncio
-import uuid
 from typing import Any, Callable, Awaitable
 
 from loguru import logger

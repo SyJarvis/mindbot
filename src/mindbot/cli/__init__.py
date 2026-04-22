@@ -290,9 +290,6 @@ def _copy_builtin_skills(skills_dir: Path) -> None:
 
 def _copy_tree(src, dst: Path) -> None:
     """Recursively copy a directory tree from an importlib resource path."""
-    from importlib import resources
-    import shutil
-
     dst.mkdir(parents=True, exist_ok=True)
     for entry in src.iterdir():
         child = dst / entry.name
@@ -323,6 +320,7 @@ def _prompt_download_model(setup: Any, console: Console) -> str | None:
     """
     from rich.console import Console
 
+    console = Console()
     console.print("\n[bold]Recommended models to download:[/bold]")
     for i, m in enumerate(setup.RECOMMENDED_MODELS, 1):
         marker = "[green]← 推荐[/green]" if m["name"] == setup.DEFAULT_MODEL else ""
@@ -449,7 +447,7 @@ def onboard(
     console.print(f"[green]✓[/green] Created {system_file}")
 
     # Create workspace sub-directories
-    for d in ("skills", "memory", "history", "cron", "workspace"):
+    for d in ("skills", "memory", "history", "cron", "workspace", "data"):
         (root / d).mkdir(exist_ok=True)
 
     # Copy built-in skills from templates (skip if user skill already exists)
