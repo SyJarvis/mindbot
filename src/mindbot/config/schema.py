@@ -378,11 +378,73 @@ class AgentConfig(BaseModel):
     )
 
 
-class MemoryConfig(BaseModel):
-    """Memory subsystem settings."""
+class VectorMemoryConfig(BaseModel):
+    """Vector memory layer settings."""
 
     model_config = ConfigDict(extra="forbid")
 
+    enabled: bool = True
+    backend: str = "lancedb"                # lancedb | qdrant (future)
+    persist_path: str = "~/.mindbot/vectors"
+    dimension: int = Field(default=512, ge=64, le=4096)
+
+    # Embedder settings
+    embedder_type: str = "openai"           # openai | qwen3 (future)
+    embedder_model: str = "text-embedding-3-small"
+
+    # Update thresholds
+    merge_threshold: float = Field(default=0.85, ge=0.0, le=1.0)
+    correct_threshold: float = Field(default=0.90, ge=0.0, le=1.0)
+
+    # Forget thresholds
+    forget_threshold: float = Field(default=0.70, ge=0.0, le=1.0)
+    delete_threshold: float = Field(default=0.85, ge=0.0, le=1.0)
+    archive_threshold: float = Field(default=0.75, ge=0.0, le=1.0)
+
+
+class ForgetPolicyConfig(BaseModel):
+    """Multi-dimensional forget scoring weights."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    access_weight: float = Field(default=0.25, ge=0.0, le=1.0)
+    age_weight: float = Field(default=0.20, ge=0.0, le=1.0)
+    redundancy_weight: float = Field(default=0.25, ge=0.0, le=1.0)
+    density_weight: float = Field(default=0.15, ge=0.0, le=1.0)
+    source_weight: float = Field(default=0.15, ge=0.0, le=1.0)
+
+    max_age_days: float = Field(default=30.0, ge=1.0)
+    recent_protection_days: int = Field(default=3, ge=0)
+
+    cycle_interval_hours: int = Field(default=24, ge=1)
+
+
+class MemoryConfig(BaseModel):
+    """Memory subsystem settings — four-tier structure."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    # Base paths
+    base_path: str = "~/.mindbot/memory"
+    content_path: str = "~/.mindbot/memory/content"
+
+    # Default agent
+    default_agent_id: str = "default"
+    default_agent_name: str = "MindBot"
+
+    # Vector layer
+    vector: VectorMemoryConfig = Field(default_factory=VectorMemoryConfig)
+
+    # Forget policy
+    forget_policy: ForgetPolicyConfig = Field(default_factory=ForgetPolicyConfig)
+
+    # Retrieval settings
+    retrieval_top_k: int = Field(default=5, ge=1, le=50)
+    vector_weight: float = Field(default=0.5, ge=0.0, le=1.0)
+    keyword_weight: float = Field(default=0.35, ge=0.0, le=1.0)
+    recency_weight: float = Field(default=0.15, ge=0.0, le=1.0)
+
+    # Legacy compatibility (deprecated but kept for transition)
     storage_path: str = "~/.mindbot/data/memory.db"
     markdown_path: str = "~/.mindbot/data/memory"
     short_term_retention_days: int = Field(default=7, ge=1)
