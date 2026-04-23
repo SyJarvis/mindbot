@@ -17,6 +17,7 @@ class OllamaProviderParam(BaseProviderParam):
     api_key: str | None = None
     temperature: float = 0.7
     max_tokens: int | None = None
+    vision_enabled: bool = False
     extra: dict[str, Any] = field(default_factory=dict)
 
     # Auto-pull configuration
