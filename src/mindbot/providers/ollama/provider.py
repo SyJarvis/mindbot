@@ -39,20 +39,29 @@ class OllamaProvider(Provider):
         self._headers: dict[str, str] = {}
         if param.api_key:
             self._headers["Authorization"] = f"Bearer {param.api_key}"
-        self._async_client: Any = None  # 延迟创建
+        self._async_client: Any = None
+        self._client_loop_id: int | None = None
         self._bound_tools: list[Any] | None = None
 
     def _get_client(self) -> Any:
         """Get or create httpx.AsyncClient, handling event loop changes."""
         import httpx
 
-        # 如果 client 不存在，或者已关闭，重新创建
-        if self._async_client is None or self._async_client.is_closed:
+        current_loop = asyncio.get_running_loop()
+        current_loop_id = id(current_loop)
+
+        # 如果事件循环变化或 client 不存在或已关闭，重新创建
+        if (
+            self._async_client is None
+            or self._async_client.is_closed
+            or self._client_loop_id != current_loop_id
+        ):
             self._async_client = httpx.AsyncClient(
                 base_url=self._base_url,
                 timeout=120.0,
                 headers=self._headers or None,
             )
+            self._client_loop_id = current_loop_id
 
         return self._async_client
 

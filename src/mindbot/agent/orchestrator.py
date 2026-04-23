@@ -19,7 +19,7 @@ import asyncio
 from collections.abc import Callable
 from typing import Any
 
-from mindbot.agent.approval import ApprovalManager
+from mindbot.permissions import PermissionManager
 from mindbot.config.schema import ToolApprovalConfig
 from mindbot.agent.input import InputManager
 from mindbot.agent.interrupt import AgentExecution, InterruptException
@@ -87,7 +87,11 @@ class AgentOrchestrator:
 
         # Approval and input managers
         self._approval_config = approval_config or ToolApprovalConfig()
-        self._approval_manager = ApprovalManager(self._approval_config)
+        # Migrate to PermissionManager with compatibility layer
+        self._approval_manager = PermissionManager(
+            config={"agent": {"approval": self._approval_config.model_dump() if hasattr(self._approval_config, 'model_dump') else {}}},
+            config_path=None,
+        )
         self._input_manager = InputManager()
 
     async def chat(
