@@ -14,7 +14,7 @@
 - `src/mindbot/agent/orchestrator.py`
 - `src/mindbot/agent/streaming.py`
 - `src/mindbot/agent/scheduler.py`
-- `src/mindbot/agent/approval.py`
+- `src/mindbot/permissions/` (permission management system)
 - `src/mindbot/agent/input.py`
 - `src/mindbot/agent/interrupt.py`
 - `src/mindbot/agent/multi_agent.py`
