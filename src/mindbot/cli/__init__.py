@@ -1,6 +1,8 @@
 """MindBot CLI."""
 
+import asyncio
 import json
+import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -39,6 +41,7 @@ class _ShellSessionContext:
     persisted_trusted_paths: set[Path] = field(default_factory=set)
     session_trusted_paths: set[Path] = field(default_factory=set)
     session_cwd_authorized: bool | None = None
+    permission_manager: Any | None = None  # PermissionManager instance
 
     @property
     def trusted_paths(self) -> list[Path]:
@@ -97,6 +100,18 @@ def _emit_shell_event(event: Any, state: _ShellEventState) -> None:
             state.line_open = False
         message = data.get("message", "Unknown error")
         console.print(f"[red]Error: {message}[/red]")
+        return
+
+    if event_type == "permission_request":
+        if state.line_open:
+            console.print()
+            state.line_open = False
+        prompt = data.get("prompt", "")
+        # Remove rich formatting tags for cleaner display
+        import re
+        clean_prompt = re.sub(r'\[(/?)[^\]]+\]', '', prompt)
+        console.print(clean_prompt)
+        return
 
 
 def _render_shell_response(content: str, state: _ShellEventState) -> None:
@@ -134,13 +149,14 @@ def _resolve_shell_session_context(bot: Any, config_file: Path, launch_cwd: Path
     )
     session_cwd = launch_cwd.expanduser().resolve()
     persisted_trusted_paths = set(_unique_paths(list(bot.config.agent.trusted_paths)))
-    authorized = is_within_allowed_roots(session_cwd, allowed_roots)
+    # Only pre-authorize if within allowed roots; otherwise leave as None to prompt user
+    pre_authorized = is_within_allowed_roots(session_cwd, allowed_roots)
     return _ShellSessionContext(
         config_file=config_file,
         workspace=workspace,
         session_cwd=session_cwd,
         persisted_trusted_paths=persisted_trusted_paths,
-        session_cwd_authorized=authorized,
+        session_cwd_authorized=True if pre_authorized else None,
     )
 
 
@@ -194,6 +210,108 @@ def _prompt_trust_session_cwd(bot: Any, shell_ctx: _ShellSessionContext) -> None
         f"[yellow]Current directory not trusted.[/yellow] MindBot will continue using "
         f"workspace {shell_ctx.workspace}"
     )
+
+
+def _prompt_trust_session_cwd_with_natural_language(
+    permission_manager: Any,
+    shell_ctx: _ShellSessionContext,
+) -> bool:
+    """Ask whether the current shell directory should be trusted using natural language.
+
+    Returns:
+        True if authorized, False otherwise.
+    """
+    from datetime import datetime
+    from mindbot.permissions import (
+        PermissionRequest,
+        PermissionType,
+        PermissionDecision,
+        PermissionGrant,
+    )
+
+    # Check if already granted
+    is_granted, _ = permission_manager.check_permission(
+        PermissionType.DIRECTORY_ACCESS,
+        str(shell_ctx.session_cwd),
+    )
+    if is_granted:
+        shell_ctx.session_cwd_authorized = True
+        return True
+
+    # Create permission request
+    request = PermissionRequest(
+        request_id=str(uuid.uuid4()),
+        permission_type=PermissionType.DIRECTORY_ACCESS,
+        resource=str(shell_ctx.session_cwd),
+        context={
+            "path": str(shell_ctx.session_cwd),
+            "workspace": str(shell_ctx.workspace),
+            "action": "访问并作为当前工作目录",
+        },
+        reason=f"当前目录 {shell_ctx.session_cwd} 在工作目录 {shell_ctx.workspace} 之外",
+        risk_level="low",
+    )
+
+    # Generate and display natural language prompt
+    prompt = request.to_natural_language()
+    # Remove rich formatting for cleaner display
+    import re
+    clean_prompt = re.sub(r'\[(/?)[^\]]+\]', '', prompt)
+    console.print(clean_prompt)
+
+    # Get user response
+    while True:
+        user_input = typer.prompt("您的回复").strip()
+        decision, confidence = permission_manager._resolver.resolve(user_input)
+
+        if decision == PermissionDecision.CLARIFY:
+            console.print(
+                "[yellow]请明确回复，例如：确认 / 永久允许 / 拒绝[/yellow]"
+            )
+            continue
+
+        break
+
+    # Handle the decision
+    key = permission_manager.grant_key(PermissionType.DIRECTORY_ACCESS, str(shell_ctx.session_cwd))
+
+    if decision == PermissionDecision.GRANT_SESSION:
+        permission_manager.add_session_grant(PermissionGrant(
+            resource=str(shell_ctx.session_cwd),
+            permission_type=PermissionType.DIRECTORY_ACCESS,
+            scope="session",
+            granted_at=datetime.now(),
+        ))
+        shell_ctx.session_trusted_paths.add(shell_ctx.session_cwd)
+        shell_ctx.session_cwd_authorized = True
+        console.print(f"[green]已授权本次会话访问:[/green] {shell_ctx.session_cwd}")
+        return True
+
+    elif decision == PermissionDecision.GRANT_ALWAYS:
+        permission_manager.add_session_grant(PermissionGrant(
+            resource=str(shell_ctx.session_cwd),
+            permission_type=PermissionType.DIRECTORY_ACCESS,
+            scope="persistent",
+            granted_at=datetime.now(),
+        ))
+        # Persist to config file
+        permission_manager._persist_grant(request)
+
+        shell_ctx.persisted_trusted_paths.add(shell_ctx.session_cwd)
+        shell_ctx.session_cwd_authorized = True
+        console.print(f"[green]已永久授权访问:[/green] {shell_ctx.session_cwd}")
+        return True
+
+    else:  # DENY or DENY_ALWAYS
+        shell_ctx.session_cwd_authorized = False
+        console.print(
+            f"[yellow]目录未授权.[/yellow] MindBot 将继续使用工作目录 {shell_ctx.workspace}"
+        )
+        if decision == PermissionDecision.DENY_ALWAYS:
+            # Add to denylist
+            permission_manager.add_to_denylist(PermissionType.DIRECTORY_ACCESS, str(shell_ctx.session_cwd))
+        return False
+        return False
 
 
 def _build_shell_turn_tools(bot: Any, shell_ctx: _ShellSessionContext) -> list[Any]:
@@ -744,6 +862,7 @@ def shell(
 
     try:
         from mindbot import MindBot
+        from mindbot.permissions import PermissionManager
         bot = MindBot()
     except Exception as e:
         console.print(f"[red]Error initializing bot: {e}[/red]")
@@ -751,11 +870,35 @@ def shell(
 
     shell_ctx = _resolve_shell_session_context(bot, config_file, Path.cwd())
 
+    # Initialize permission manager
+    import json
+    config_data = json.loads(config_file.read_text(encoding="utf-8"))
+    permission_manager = PermissionManager(config=config_data, config_path=config_file)
+    shell_ctx.permission_manager = permission_manager
+
+    # Track pending permission requests
+    pending_permission_id: str | None = None
+
+    def _emit_shell_event_with_permissions(event: Any, state: _ShellEventState) -> None:
+        """Render agent events and track permission requests."""
+        nonlocal pending_permission_id
+        data = getattr(event, "data", {}) or {}
+        event_type = getattr(getattr(event, "type", None), "value", None)
+
+        # Track permission requests
+        if event_type == "permission_request":
+            pending_permission_id = data.get("request_id")
+
+        _emit_shell_event(event, state)
+
     console.print("[bold green]MindBot Shell[/bold green] (Ctrl+C to exit)")
     console.print(f"[dim]Session: {session_id} | Model: {bot.model}[/dim]")
     console.print(f"[dim]Workspace: {shell_ctx.workspace}[/dim]")
     console.print(f"[dim]Current directory: {shell_ctx.session_cwd}[/dim]")
-    _prompt_trust_session_cwd(bot, shell_ctx)
+
+    # Handle directory authorization with PermissionManager
+    _prompt_trust_session_cwd_with_natural_language(permission_manager, shell_ctx)
+
     console.print("[dim]Type /help for slash commands[/dim]\n")
 
     while True:
@@ -773,6 +916,25 @@ def shell(
                 _handle_slash_command(stripped, bot, shell_ctx)
                 continue
 
+            # ---- Permission request handling ----
+            if pending_permission_id and permission_manager.has_pending():
+                # This is a permission decision response
+                from mindbot.permissions import PermissionDecision
+
+                decision = permission_manager.resolve_from_message(
+                    pending_permission_id, user_input
+                )
+
+                if decision == PermissionDecision.CLARIFY:
+                    console.print(
+                        "[yellow]请明确回复：确认本次 / 永久允许 / 拒绝[/yellow]"
+                    )
+                    continue
+
+                pending_permission_id = None
+                # Decision has been processed, continue to next prompt
+                continue
+
             console.print("[dim]Thinking...[/dim]")
             import asyncio
             state = _ShellEventState()
@@ -782,7 +944,7 @@ def shell(
                     user_input,
                     session_id=session_id,
                     tools=turn_tools,
-                    on_event=lambda event: _emit_shell_event(event, state),
+                    on_event=lambda event: _emit_shell_event_with_permissions(event, state),
                 )
             )
             _render_shell_response(agent_response.content, state)

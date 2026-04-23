@@ -51,6 +51,7 @@ class EventType(str, Enum):
     TOOL_CALL_DENIED = "tool_call_denied"      # Tool call denied
     TOOL_EXECUTING = "tool_executing"    # Executing a tool
     TOOL_RESULT = "tool_result"          # Tool execution result
+    PERMISSION_REQUEST = "permission_request"  # Generic permission request
     USER_INPUT_REQUEST = "user_input_request"  # Requesting user input
     USER_INPUT_RECEIVED = "user_input_received"  # User input received
     COMPLETE = "complete"                # Execution completed
@@ -135,6 +136,36 @@ class AgentEvent:
             type=EventType.TOOL_RESULT,
             timestamp=time.time(),
             data={"tool_name": tool_name, "call_id": call_id, "result": result},
+        )
+
+    @classmethod
+    def permission_request(
+        cls,
+        request_id: str,
+        prompt: str,
+        permission_type: str,
+        resource: str,
+        risk_level: str = "medium",
+    ) -> "AgentEvent":
+        """Create a permission request event.
+
+        Args:
+            request_id: Unique identifier for this request
+            prompt: Natural language prompt to show the user
+            permission_type: Type of permission (e.g., "DIRECTORY_ACCESS", "TOOL_EXECUTION")
+            resource: The resource being requested (path, tool name, etc.)
+            risk_level: Risk level (low, medium, high)
+        """
+        return cls(
+            type=EventType.PERMISSION_REQUEST,
+            timestamp=time.time(),
+            data={
+                "request_id": request_id,
+                "prompt": prompt,
+                "permission_type": permission_type,
+                "resource": resource,
+                "risk_level": risk_level,
+            },
         )
 
     @classmethod
