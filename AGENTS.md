@@ -34,7 +34,7 @@ This guide helps AI agents assist in developing MindBot — a modular AI Agent f
 │  bot.py  agent/core.py  agent/agent.py                          │
 │  agent/turn_engine.py  agent/streaming.py                       │
 │  agent/input_builder.py  agent/persistence_writer.py            │
-│  agent/approval.py  agent/models.py  agent/scheduler.py         │
+│  agent/models.py  agent/scheduler.py                            │
 │  builders/*                                                     │
 │  Turn/session flow, tool orchestration, persistence             │
 │  Imports from: L3, L4, L5                                       │
