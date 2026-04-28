@@ -162,12 +162,28 @@ def create_agent(
         merged_tools = _merge_tools(merged_tools, [create_tool_meta])
         effective_facade.refresh_registry()
 
+    context_config = config.context
+    # Auto-adjust context max_tokens to fit the provider's actual hardware limit.
+    try:
+        info = llm.get_info()
+        if info.context_window and info.context_window > 0:
+            effective_max = min(context_config.max_tokens, info.context_window)
+            if effective_max != context_config.max_tokens:
+                from mindbot.utils import get_logger
+                get_logger("builders").info(
+                    "Context max_tokens adjusted: %d → %d (provider %s/%s limit)",
+                    context_config.max_tokens, effective_max, info.provider, info.model,
+                )
+                context_config = context_config.model_copy(update={"max_tokens": effective_max})
+    except Exception:
+        pass  # non-fatal: fall back to config value
+
     return Agent(
         name=name,
         llm=llm,
         tools=merged_tools,
         system_prompt=system_prompt if system_prompt is not None else config.agent.system_prompt,
-        context_config=config.context,
+        context_config=context_config,
         memory=memory,
         memory_top_k=config.agent.memory_top_k,
         tool_persistence=config.agent.tool_persistence.value,

@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from mindbot.agent.models import AgentEvent
+    from mindbot.routing.health import HealthMonitor
 
 from mindbot.config.schema import Config
 from mindbot.config.loader import load_config
@@ -60,6 +61,28 @@ class MindBot:
         # Initialize Cron service
         cron_path = Path.home() / ".mindbot" / "cron" / "jobs.json"
         self.cron: CronService = CronService(cron_path)
+
+        # Initialize HealthMonitor if routing is enabled
+        self._health_monitor: "HealthMonitor | None" = None
+        if self.config.routing.auto and self.config.routing.health_probe.enabled:
+            from mindbot.routing.health import HealthMonitor
+            from mindbot.routing.health import HealthProbeConfig
+            from mindbot.routing.adapter import RoutingProviderAdapter
+
+            # Get the RoutingProviderAdapter's EndpointManager
+            llm = self._agent._main_agent.llm
+            if isinstance(llm, RoutingProviderAdapter):
+                probe_config = HealthProbeConfig(
+                    enabled=self.config.routing.health_probe.enabled,
+                    probe_interval_seconds=self.config.routing.health_probe.probe_interval_seconds,
+                    probe_timeout_seconds=self.config.routing.health_probe.probe_timeout_seconds,
+                    success_threshold=self.config.routing.health_probe.success_threshold,
+                )
+                self._health_monitor = HealthMonitor(
+                    self.config,
+                    llm._endpoint_manager,
+                    probe_config,
+                )
 
         # State
         self._running = False
@@ -357,15 +380,38 @@ class MindBot:
         return self._running
 
     async def start(self) -> None:
-        """Start bot, cron, and config watcher (if available)."""
+        """Start bot, cron, health monitor, and config watcher (if available)."""
         self._running = True
         await self.cron.start()
+        if self._health_monitor is not None:
+            await self._health_monitor.start()
         if self._store is not None:
             await self._store.watch()
 
     async def stop(self) -> None:
-        """Stop bot, cron, and config watcher."""
+        """Stop bot, health monitor, cron, and config watcher."""
         self._running = False
         if self._store is not None:
             await self._store.stop_watch()
+        if self._health_monitor is not None:
+            await self._health_monitor.stop()
         await self.cron.stop()
+
+    def get_health_status(self) -> dict[str, Any]:
+        """Get comprehensive health status for all providers.
+
+        Returns:
+            Dict mapping endpoint keys to health status info.
+            Includes is_healthy, failures, last_probe_time, etc.
+        """
+        if self._health_monitor is not None:
+            return self._health_monitor.get_health_status()
+        # Single-provider mode - no health monitoring
+        return {
+            "default": {
+                "instance": self.provider,
+                "model": self.model,
+                "is_healthy": True,
+                "status": "active",
+            }
+        }
