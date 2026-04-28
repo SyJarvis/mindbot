@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 from typing import Any
 
 from mindbot.providers.base import Provider
@@ -37,7 +38,9 @@ class ProviderFactory:
         provider_class, param_class = cls._providers[name]
 
         if isinstance(config, dict):
-            param = param_class(**config)
+            valid_fields = {f.name for f in dataclasses.fields(param_class)}
+            filtered = {k: v for k, v in config.items() if k in valid_fields and v is not None}
+            param = param_class(**filtered)
         elif isinstance(config, param_class):
             param = config
         else:

@@ -78,6 +78,7 @@ class ProviderInfo:
     model: str             # e.g. "gpt-4o-mini"
     supports_vision: bool = False
     supports_tools: bool = False
+    context_window: int | None = None  # max input+output tokens the model supports
 
 
 # ---------------------------------------------------------------------------

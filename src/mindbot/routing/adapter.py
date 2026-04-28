@@ -73,9 +73,19 @@ class RoutingProviderAdapter:
         tried: list[str] = []
         last_exc: Exception | None = None
 
-        # Try primary and fallbacks
+        # Try primary and fallbacks (skip unhealthy endpoints)
         all_candidates = [(decision.instance, decision.endpoint_index, decision.model_id)]
         all_candidates.extend(decision.fallbacks)
+        all_candidates = [
+            (inst, ep_idx, mid) for inst, ep_idx, mid in all_candidates
+            if self._endpoint_manager.should_try(inst, ep_idx)
+        ]
+
+        if not all_candidates:
+            # All unhealthy after cooldown expiry – reset and try anyway
+            self._endpoint_manager.reset_health()
+            all_candidates = [(decision.instance, decision.endpoint_index, decision.model_id)]
+            all_candidates.extend(decision.fallbacks)
 
         for instance, endpoint_idx, model_id in all_candidates:
             label = f"{instance}/{endpoint_idx}/{model_id}"
@@ -115,6 +125,15 @@ class RoutingProviderAdapter:
 
         all_candidates = [(decision.instance, decision.endpoint_index, decision.model_id)]
         all_candidates.extend(decision.fallbacks)
+        all_candidates = [
+            (inst, ep_idx, mid) for inst, ep_idx, mid in all_candidates
+            if self._endpoint_manager.should_try(inst, ep_idx)
+        ]
+
+        if not all_candidates:
+            self._endpoint_manager.reset_health()
+            all_candidates = [(decision.instance, decision.endpoint_index, decision.model_id)]
+            all_candidates.extend(decision.fallbacks)
 
         for instance, endpoint_idx, model_id in all_candidates:
             label = f"{instance}/{endpoint_idx}/{model_id}"

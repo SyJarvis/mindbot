@@ -1,10 +1,10 @@
-"""ModelRouter – selects the most appropriate (instance, endpoint, model) for a request.
+"""模型路由器 - 为每个请求选择最合适的 (实例, 端点, 模型)。
 
-Selection priority (highest to lowest):
-1. Media rule: if the conversation contains images, prefer a vision-capable model.
-2. Keyword rules: first rule whose keywords match the user text wins (sorted by priority desc).
-3. Complexity: automatic level estimation from text features.
-4. Default: the model configured in ``config.agent.model``.
+选择优先级（从高到低）：
+1. 媒体规则：对话包含图片时，优先选择支持视觉的模型
+2. 关键词规则：按优先级降序匹配，首个匹配关键词的规则生效
+3. 复杂度：根据文本特征自动估算复杂度等级
+4. 默认：使用 ``config.agent.model`` 配置的模型
 """
 
 from __future__ import annotations
@@ -20,13 +20,13 @@ from mindbot.routing.models import ModelCandidate, RoutingDecision
 
 
 class ComplexityScorer:
-    """Estimate task complexity from text features.
+    """复杂度评分器 - 根据文本特征估算任务复杂度。
 
-    Features considered:
-    - Text length
-    - Code blocks
-    - Numbers/math expressions
-    - Technical terms
+    考虑的特征：
+    - 文本长度
+    - 代码块
+    - 数字/数学表达式
+    - 技术术语
     """
 
     _WORD_RE = re.compile(r"\S+")
@@ -34,9 +34,9 @@ class ComplexityScorer:
     _MATH_RE = re.compile(r"\d+\s*[\+\-\*\/]\s*\d+|[a-z]\s*=\s*\d+")
 
     def score(self, text: str) -> tuple[float, str, list[str]]:
-        """Return (score, level, reasons).
+        """返回 (分数, 等级, 原因列表)。
 
-        Score is 0-1, level is "low"/"medium"/"high".
+        分数范围 0-1，等级为 "low"/"medium"/"high"。
         """
         words = self._WORD_RE.findall(text)
         word_count = len(words)
@@ -44,23 +44,23 @@ class ComplexityScorer:
         reasons = []
         score = 0.0
 
-        # Length score (normalized to ~300 words as "medium")
+        # 长度评分（约 300 词为"中等"基准）
         length_score = min(word_count / 300, 1.0)
         score += length_score * 0.3
         if word_count > 200:
             reasons.append("long_text")
 
-        # Code detection
+        # 代码检测
         if self._CODE_RE.search(text):
             score += 0.4
             reasons.append("code")
 
-        # Math detection
+        # 数学表达式检测
         if self._MATH_RE.search(text):
             score += 0.2
             reasons.append("math")
 
-        # Technical keywords
+        # 技术关键词检测
         tech_keywords = [
             "algorithm", "function", "class", "method", "variable",
             "数据结构", "算法", "函数", "类", "变量",
@@ -70,7 +70,7 @@ class ComplexityScorer:
             score += 0.1
             reasons.append("technical")
 
-        # Determine level
+        # 确定等级
         if score < 0.3:
             level = "low"
         elif score < 0.6:
@@ -82,10 +82,10 @@ class ComplexityScorer:
 
 
 class ModelRouter:
-    """Stateless router: given messages and config, returns a :class:`RoutingDecision`.
+    """无状态路由器：根据消息和配置返回路由决策。
 
-    The router reads ``config.providers`` to enumerate all declared models across
-    all endpoints and ``config.routing.rules`` for keyword rules. It never makes network calls.
+    从 ``config.providers`` 读取所有声明的模型和端点，
+    从 ``config.routing.rules`` 读取关键词规则。不发起网络请求。
     """
 
     def __init__(self, config: Config) -> None:
@@ -94,24 +94,24 @@ class ModelRouter:
         self._cached_candidates: list[ModelCandidate] | None = None
 
     def invalidate_cache(self) -> None:
-        """Clear cached candidates (call after config reload)."""
+        """清除缓存候选（配置重载后调用）。"""
         self._cached_candidates = None
 
     # ------------------------------------------------------------------
-    # Public API
+    # 公共接口
     # ------------------------------------------------------------------
 
     def select_model(self, messages: list[Message]) -> RoutingDecision:
-        """Return the routing decision for the given *messages*."""
+        """根据消息返回路由决策。"""
         user_text = self._extract_user_text(messages)
 
-        # 1. Media rule (vision)
+        # 1. 媒体规则（视觉）
         if self._has_images(messages):
             return self._select_by_capability(
                 "vision", user_text, rule_hit="media:image"
             )
 
-        # 2. Keyword rules (sorted by priority descending)
+        # 2. 关键词规则（按优先级降序）
         for rule in sorted(
             self._config.routing.rules,
             key=lambda r: r.priority,
@@ -124,7 +124,7 @@ class ModelRouter:
                     score=0.0,
                 )
 
-        # 3. Complexity evaluation
+        # 3. 复杂度评估
         score, level, reasons = self._scorer.score(user_text)
         return self._select_by_level(
             level,
@@ -133,18 +133,22 @@ class ModelRouter:
         )
 
     def get_model_list(self) -> list[str]:
-        """Return all available models as "instance/model" strings."""
+        """返回所有可用模型，格式为 "instance/model"。"""
         return [f"{c.instance}/{c.model_id}" for c in self._collect_all_candidates()]
 
     # ------------------------------------------------------------------
-    # Selection helpers
+    # 选择辅助方法
     # ------------------------------------------------------------------
 
     def _select_by_level(
         self, level: str, *, rule_hit: str, score: float
     ) -> RoutingDecision:
-        """Find candidates matching *level*; fall back to adjacent levels."""
+        """查找匹配指定等级的候选；失败时降级到相邻等级。"""
         candidates = self._collect_candidates_by_level(level)
+        # 添加跨等级降级候选（high → medium → low）
+        fallback_levels = self._get_fallback_levels(level)
+        for fb_level in fallback_levels:
+            candidates.extend(self._collect_candidates_by_level(fb_level))
         if not candidates:
             candidates = self._collect_all_candidates()
         if not candidates:
@@ -166,7 +170,7 @@ class ModelRouter:
     def _select_by_capability(
         self, capability: str, text: str, *, rule_hit: str
     ) -> RoutingDecision:
-        """Select a model that advertises *capability* (e.g. 'vision')."""
+        """选择支持指定能力的模型（如 'vision'）。"""
         if capability == "vision":
             candidates = [c for c in self._collect_all_candidates() if c.vision]
         else:
@@ -194,7 +198,7 @@ class ModelRouter:
         )
 
     def _default_decision(self, *, rule_hit: str, score: float) -> RoutingDecision:
-        """Fallback when no model is found in config."""
+        """配置中未找到模型时的默认决策。"""
         instance, model_id = self._parse_model_ref(self._config.agent.model)
         provider_type = self._get_provider_type(instance)
         return RoutingDecision(
@@ -209,11 +213,11 @@ class ModelRouter:
         )
 
     # ------------------------------------------------------------------
-    # Candidate enumeration
+    # 候选枚举
     # ------------------------------------------------------------------
 
     def _collect_all_candidates(self) -> list[ModelCandidate]:
-        """Return all models declared across all provider instances and endpoints."""
+        """返回所有 provider 实例和端点中声明的模型。"""
         if self._cached_candidates is not None:
             return self._cached_candidates
 
@@ -238,7 +242,7 @@ class ModelRouter:
                     )
                 )
 
-        # Sort by level (high → medium → low) for fallback order
+        # 按等级排序（high → medium → low）作为 fallback 顺序
         level_order = {"high": 0, "medium": 1, "low": 2}
         candidates.sort(key=lambda c: level_order.get(c.level, 99))
 
@@ -246,25 +250,34 @@ class ModelRouter:
         return candidates
 
     def _collect_candidates_by_level(self, level: str) -> list[ModelCandidate]:
-        """Return candidates matching *level* exactly."""
+        """返回精确匹配指定等级的候选。"""
         return [c for c in self._collect_all_candidates() if c.level == level]
 
     # ------------------------------------------------------------------
-    # Helpers
+    # 辅助方法
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _get_fallback_levels(level: str) -> list[str]:
+        """返回降级等级列表（high → medium → low）。"""
+        level_chain = ["high", "medium", "low"]
+        if level not in level_chain:
+            return []
+        idx = level_chain.index(level)
+        return level_chain[idx + 1:]
+
     def _get_provider_type(self, instance: str) -> str:
-        """Look up the backend driver type for a provider instance."""
+        """查询 provider 实例的后端驱动类型。"""
         cfg = self._config.providers.get(instance)
         return cfg.type if cfg else "openai"
 
     # ------------------------------------------------------------------
-    # Rule matching
+    # 规则匹配
     # ------------------------------------------------------------------
 
     @staticmethod
     def _matches_keyword_rule(text: str, rule: Any) -> bool:
-        """Return True if *text* matches the keyword rule."""
+        """判断文本是否匹配关键词规则。"""
         lower = text.lower()
 
         if rule.min_length is not None and len(text) < rule.min_length:
@@ -279,7 +292,7 @@ class ModelRouter:
 
     @staticmethod
     def _extract_user_text(messages: list[Message]) -> str:
-        """Extract user text from messages."""
+        """从消息中提取用户文本。"""
         text_parts = []
         for msg in messages:
             if msg.role in ("user", "system"):
@@ -295,7 +308,7 @@ class ModelRouter:
 
     @staticmethod
     def _has_images(messages: list[Message]) -> bool:
-        """Return True if any message contains images."""
+        """判断消息中是否包含图片。"""
         for msg in messages:
             if isinstance(msg.content, list):
                 for part in msg.content:
@@ -307,7 +320,7 @@ class ModelRouter:
 
     @staticmethod
     def _parse_model_ref(model_ref: str) -> tuple[str, str]:
-        """Parse 'instance/model' into (instance, model)."""
+        """解析 'instance/model' 为 (实例名, 模型名)。"""
         if "/" in model_ref:
             parts = model_ref.split("/")
             if len(parts) >= 2:
