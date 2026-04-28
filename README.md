@@ -1,7 +1,7 @@
 # MindBot
 
 <div align="center">
-  <img src="docs/assets/mindbot_logo.png" alt="MindBot" width="400" />
+  <img src="assets/mindbot_logo.png" alt="MindBot" width="400" />
 </div>
 
 <p align="center">
