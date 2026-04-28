@@ -28,3 +28,4 @@ class OllamaProviderParam(BaseProviderParam):
     pull_retries: int = 3
     pull_backoff: float = 2.0  # base seconds for exponential backoff
     pull_background: bool = True
+    context_window: int | None = None  # override model context window if set

@@ -24,6 +24,49 @@ from mindbot.context.models import (
 )
 from mindbot.utils import get_logger
 
+# Well-known Ollama model context windows (fallback when API doesn't report num_ctx)
+# Source: https://ollama.com/library models' default num_ctx
+OLLAMA_MODEL_CONTEXT_WINDOW: dict[str, int] = {
+    # Qwen series
+    "qwen3:0.6b": 32768,
+    "qwen3:1.7b": 32768,
+    "qwen3:4b": 32768,
+    "qwen3:8b": 32768,
+    "qwen3:14b": 32768,
+    "qwen3:32b": 32768,
+    "qwen2.5:0.5b": 32768,
+    "qwen2.5:1.5b": 32768,
+    "qwen2.5:3b": 32768,
+    "qwen2.5:7b": 32768,
+    "qwen2.5:14b": 32768,
+    "qwen2.5:32b": 32768,
+    "qwen2.5-coder:1.5b": 32768,
+    "qwen2.5-coder:7b": 32768,
+    # Llama series
+    "llama3.2:1b": 131072,
+    "llama3.2:3b": 131072,
+    "llama3.3:70b": 131072,
+    "llama4:8b": 131072,
+    "llama4:17b": 131072,
+    # DeepSeek series
+    "deepseek-r1:1.5b": 32768,
+    "deepseek-r1:7b": 32768,
+    "deepseek-r1:8b": 32768,
+    "deepseek-r1:14b": 32768,
+    "deepseek-coder:6.7b": 16384,
+    # Gemma series
+    "gemma3:1b": 32768,
+    "gemma3:4b": 32768,
+    "gemma3:12b": 32768,
+    "gemma3:27b": 32768,
+    # Phi series
+    "phi4:14b": 16384,
+    "phi3.5:3.8b": 131072,
+    # Mistral series
+    "mistral:7b": 32768,
+    "mixtral:8x7b": 32768,
+}
+
 logger = get_logger("providers.ollama")
 
 class OllamaProvider(Provider):
@@ -47,8 +90,14 @@ class OllamaProvider(Provider):
         """Get or create httpx.AsyncClient, handling event loop changes."""
         import httpx
 
-        current_loop = asyncio.get_running_loop()
-        current_loop_id = id(current_loop)
+        # Handle sync test contexts where no event loop is running
+        try:
+            current_loop = asyncio.get_running_loop()
+            current_loop_id = id(current_loop)
+        except RuntimeError:
+            # No running loop - create client without loop tracking
+            # This happens in sync unit tests; client will be recreated in async context
+            current_loop_id = None
 
         # 如果事件循环变化或 client 不存在或已关闭，重新创建
         if (
@@ -178,13 +227,90 @@ class OllamaProvider(Provider):
             usage=usage,
         )
 
+    async def get_model_context_window(self, model: str) -> int | None:
+        """Get the model's context window (num_ctx) from Ollama API or fallback table.
+
+        Priority:
+        1. Ollama /api/show endpoint (returns model's num_ctx parameter)
+        2. Fallback mapping table (OLLAMA_MODEL_CONTEXT_WINDOW)
+        """
+        effective_model = model or self._param.model
+
+        # Try API first
+        try:
+            resp = await self._get_client().post(
+                "/api/show",
+                json={"model": effective_model},
+                timeout=10.0,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            # num_ctx is in model_info.parameters or modelfile parameters
+            model_info = data.get("model_info", {})
+            parameters = model_info.get("parameters", "")
+            # Parse "num_ctx:4096" from parameters string
+            if parameters:
+                for line in parameters.split("\n"):
+                    if line.startswith("num_ctx"):
+                        parts = line.split()
+                        if len(parts) >= 2:
+                            try:
+                                return int(parts[1])
+                            except ValueError:
+                                pass
+            # Also check details dict
+            details = data.get("details", {})
+            if "num_ctx" in details:
+                return int(details["num_ctx"])
+        except Exception:
+            logger.debug("Could not fetch num_ctx from Ollama API for %s", effective_model)
+
+        # Fallback to known models table
+        model_lower = effective_model.lower()
+        for key, ctx in OLLAMA_MODEL_CONTEXT_WINDOW.items():
+            if model_lower.startswith(key.lower()) or key.lower() in model_lower:
+                return ctx
+
+        return None
+
     def _make_info(self, model: str | None = None) -> ProviderInfo:
         effective_model = model or self._param.model
+
+        # Get context window: user override takes precedence if set and valid
+        # Auto-detected value is fetched from API or fallback table
+        # Note: async call in sync method - use cached value or fallback
+        auto_detected = None
+        # Try to use cached/known value first
+        model_lower = effective_model.lower()
+        for key, ctx in OLLAMA_MODEL_CONTEXT_WINDOW.items():
+            if model_lower.startswith(key.lower()) or key.lower() in model_lower:
+                auto_detected = ctx
+                break
+
+        # User override via param.context_window
+        user_override = self._param.context_window
+
+        # Determine final context_window:
+        # - If user sets a value > auto-detected limit, clamp and warn
+        # - Otherwise use user override or auto-detected
+        if user_override is not None and auto_detected is not None:
+            if user_override > auto_detected:
+                logger.warning(
+                    "param.context_window=%d exceeds model limit=%d, clamped to %d",
+                    user_override, auto_detected, auto_detected,
+                )
+                final_context_window = auto_detected
+            else:
+                final_context_window = user_override
+        else:
+            final_context_window = user_override if user_override is not None else auto_detected
+
         return ProviderInfo(
             provider="ollama",
             model=effective_model,
             supports_vision=self.supports_vision(effective_model),
             supports_tools=True,
+            context_window=final_context_window,
         )
 
     # ------------------------------------------------------------------

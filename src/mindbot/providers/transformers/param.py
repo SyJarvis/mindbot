@@ -15,4 +15,5 @@ class TransformersProviderParam(BaseProviderParam):
     model: str = ""
     device: str = "auto"
     torch_dtype: str = "auto"
+    context_window: int | None = None  # model max context length (e.g., 2048 for small models)
     extra: dict[str, Any] = field(default_factory=dict)

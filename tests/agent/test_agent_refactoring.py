@@ -26,7 +26,7 @@ from mindbot.capability.backends.tool_backend import ToolBackend
 from mindbot.capability.backends.tooling.models import tool
 from mindbot.capability.backends.tooling.registry import ToolRegistry
 from mindbot.capability.facade import CapabilityFacade
-from mindbot.config.schema import AgentConfig, Config, ContextConfig
+from mindbot.config.schema import AgentConfig, Config, ContextConfig, ToolApprovalConfig
 from mindbot.context.models import ChatResponse, FinishReason, Message, ToolCall
 
 
@@ -347,7 +347,11 @@ class TestLegacyOrchestratorToolScope:
             """Return a legacy tool result."""
             return "legacy"
 
-        orchestrator = AgentOrchestrator(llm=llm, tools=[legacy_echo])
+        orchestrator = AgentOrchestrator(
+            llm=llm,
+            tools=[legacy_echo],
+            approval_config=ToolApprovalConfig(whitelist={"legacy_echo": [".*"]}),
+        )
         response = await orchestrator.chat([Message(role="user", content="run tool")])
 
         tool_messages = [msg for msg in response.message_trace if msg.role == "tool"]

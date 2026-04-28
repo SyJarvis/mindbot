@@ -5,11 +5,13 @@ from mindbot.providers.factory import ProviderFactory
 from mindbot.providers.ollama import OllamaProvider, OllamaProviderParam
 from mindbot.providers.openai import OpenAIProvider, OpenAIProviderParam
 from mindbot.providers.transformers import TransformersProvider, TransformersProviderParam
+from mindbot.providers.hailo import HailoProvider, HailoProviderParam
 
 # Register providers (explicit, no file scanning – per DESIGN.md)
 ProviderFactory.register("openai", OpenAIProvider, OpenAIProviderParam)
 ProviderFactory.register("ollama", OllamaProvider, OllamaProviderParam)
 ProviderFactory.register("transformers", TransformersProvider, TransformersProviderParam)
+ProviderFactory.register("hailo", HailoProvider, HailoProviderParam)
 
 __all__ = [
     "Provider",
@@ -20,4 +22,6 @@ __all__ = [
     "OllamaProviderParam",
     "TransformersProvider",
     "TransformersProviderParam",
+    "HailoProvider",
+    "HailoProviderParam",
 ]

@@ -46,4 +46,5 @@ class TransformersProvider(Provider):
             model=self._param.model,
             supports_vision=False,
             supports_tools=False,
+            context_window=self._param.context_window,
         )

@@ -26,6 +26,51 @@ logger = get_logger("providers.openai")
 # Model name prefixes/patterns that support vision input.
 _VISION_PREFIXES = ("gpt-4o", "gpt-4-turbo", "gpt-4-vision", "o1", "o3")
 
+# Well-known OpenAI/compatible model context windows (in tokens)
+# Source: https://platform.openai.com/docs/models
+OPENAI_MODEL_CONTEXT_WINDOW: dict[str, int] = {
+    # GPT-4o series (128K context)
+    "gpt-4o": 128000,
+    "gpt-4o-mini": 128000,
+    "gpt-4o-2024-05-13": 128000,
+    "gpt-4o-2024-08-06": 128000,
+    "gpt-4o-2024-11-20": 128000,
+    # GPT-4 Turbo (128K context)
+    "gpt-4-turbo": 128000,
+    "gpt-4-turbo-2024-04-09": 128000,
+    "gpt-4-0125-preview": 128000,
+    "gpt-4-1106-preview": 128000,
+    # GPT-4 (8K/32K)
+    "gpt-4": 8192,
+    "gpt-4-32k": 32768,
+    # GPT-3.5 Turbo (16K/4K)
+    "gpt-3.5-turbo": 16385,
+    "gpt-3.5-turbo-16k": 16385,
+    # o1 series (200K input, limited output)
+    "o1-preview": 128000,
+    "o1-mini": 128000,
+    "o1": 200000,
+    # o3 series
+    "o3-mini": 200000,
+    # DeepSeek (via OpenAI-compatible API)
+    "deepseek-chat": 64000,
+    "deepseek-coder": 16000,
+    "deepseek-reasoner": 64000,
+    # Moonshot (via OpenAI-compatible API)
+    "moonshot-v1-8k": 8192,
+    "moonshot-v1-32k": 32768,
+    "moonshot-v1-128k": 131072,
+    # GLM (via OpenAI-compatible API)
+    "glm-4": 131072,
+    "glm-4-flash": 131072,
+    "glm-4-plus": 131072,
+    # Qwen (via OpenAI-compatible API)
+    "qwen-turbo": 8192,
+    "qwen-plus": 32768,
+    "qwen-max": 32768,
+    "qwen-max-longcontext": 131072,
+}
+
 
 class OpenAIProvider(Provider):
     """Concrete provider using the ``openai`` Python SDK."""
@@ -165,11 +210,39 @@ class OpenAIProvider(Provider):
 
     def _make_info(self, model: str | None = None) -> ProviderInfo:
         effective_model = model or self._param.model
+
+        # Get context window from known models table
+        model_lower = effective_model.lower()
+        auto_detected = None
+        for key, ctx in OPENAI_MODEL_CONTEXT_WINDOW.items():
+            if model_lower.startswith(key.lower()) or key.lower() in model_lower:
+                auto_detected = ctx
+                break
+
+        # User override via param.context_window
+        user_override = self._param.context_window
+
+        # Determine final context_window:
+        # - If user sets a value > auto-detected limit, clamp and warn
+        # - Otherwise use user override or auto-detected
+        if user_override is not None and auto_detected is not None:
+            if user_override > auto_detected:
+                logger.warning(
+                    "param.context_window=%d exceeds model limit=%d, clamped to %d",
+                    user_override, auto_detected, auto_detected,
+                )
+                final_context_window = auto_detected
+            else:
+                final_context_window = user_override
+        else:
+            final_context_window = user_override if user_override is not None else auto_detected
+
         return ProviderInfo(
             provider="openai",
             model=effective_model,
             supports_vision=self.supports_vision(effective_model),
             supports_tools=True,
+            context_window=final_context_window,
         )
 
     # ------------------------------------------------------------------

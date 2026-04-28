@@ -80,7 +80,7 @@ class EndpointConfig(BaseModel):
 
 
 # Well-known provider driver types (used for validation)
-KNOWN_PROVIDER_TYPES = {"openai", "ollama", "transformers"}
+KNOWN_PROVIDER_TYPES = {"openai", "ollama", "transformers", "hailo"}
 
 
 class ProviderInstanceConfig(BaseModel):
@@ -193,11 +193,30 @@ class RoutingRule(BaseModel):
     priority: int = 0
 
 
+class HealthProbeConfig(BaseModel):
+    """Configuration for proactive health probing of provider endpoints."""
+
+    enabled: bool = Field(default=True, description="Enable proactive health probing")
+    probe_interval_seconds: float = Field(
+        default=30.0, ge=5.0, le=300.0,
+        description="How often to probe inactive endpoints (seconds)"
+    )
+    probe_timeout_seconds: float = Field(
+        default=10.0, ge=1.0, le=60.0,
+        description="Timeout for each probe attempt (seconds)"
+    )
+    success_threshold: int = Field(
+        default=1, ge=1, le=5,
+        description="Number of successful probes to mark endpoint healthy"
+    )
+
+
 class RoutingConfig(BaseModel):
     """Model routing configuration."""
 
     auto: bool = False
     rules: list[RoutingRule] = Field(default_factory=list)
+    health_probe: HealthProbeConfig = Field(default_factory=HealthProbeConfig)
 
 
 class ToolApprovalConfig(BaseModel):

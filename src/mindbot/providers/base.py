@@ -91,6 +91,11 @@ class Provider(ABC):
     def get_info(self) -> ProviderInfo:
         """Return metadata about this provider (provider, model, capabilities)."""
 
+    def get_context_window(self) -> int | None:
+        """Return the model's maximum context window in tokens, or ``None``."""
+        info = self.get_info()
+        return getattr(info, "context_window", None)
+
     def get_model_list(self) -> list[str]:
         """Return the list of model IDs available from this provider.
 

@@ -9,9 +9,27 @@
           "weight": 1,
           "models": [
             {
-              "id": "qwen3:8b",
+              "id": "qwen3.5:2b",
               "role": "chat",
               "level": "medium",
+              "vision": false
+            }
+          ]
+        }
+      ]
+    },
+    "local-hailo": {
+      "type": "hailo",
+      "endpoints": [
+        {
+          "base_url": "local",
+          "temperature": 0.7,
+          "max_tokens": 256,
+          "models": [
+            {
+              "id": "qwen3:1.7b",
+              "role": "chat",
+              "level": "low",
               "vision": false
             }
           ]
@@ -20,7 +38,7 @@
     }
   },
   "agent": {
-    "model": "local-ollama/qwen3:8b",
+    "model": "local-ollama/qwen3.5:2b",
     "workspace": "~/.mindbot/workspace",
     "system_path_whitelist": [
       "~/.mindbot"
@@ -112,20 +130,13 @@
   "skills": {
     "enabled": true,
     "skill_dirs": [],
-    "always_include": [
-      "mindbot-self-knowledge"
-    ],
+    "always_include": [],
     "max_visible": 8,
     "max_detail_load": 2,
     "trigger_mode": "metadata-match"
   },
   "context": {
-    "max_tokens": 8000,
-    "compression": "truncate",
-    "blocks": {
-      "skills_overview": 640,
-      "skills_detail": 1200
-    }
+    "compression": "truncate"
   },
   "session_journal": {
     "enabled": true,
@@ -137,12 +148,12 @@
   },
   "channels": {
     "http": {
-      "enabled": false,
+      "enabled": true,
       "host": "0.0.0.0",
       "port": 31211
     },
     "cli": {
-      "enabled": false
+      "enabled": true
     },
     "feishu": {
       "enabled": false,

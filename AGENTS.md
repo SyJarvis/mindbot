@@ -152,6 +152,44 @@ ContextManager 将上下文分为 7 个 Block，各有独立 token 预算，不�
 
 TurnEngine 检测连续两次完全相同的 tool call（name + arguments），自动终止并返回 `StopReason.REPEATED_TOOL`。
 
+### 8. 注释语言优先级
+
+所有代码注释、docstring、inline comments **优先使用中文**，其次使用英文。
+
+```python
+# ✅ 推荐：中文注释
+def select_model(messages: list[Message]) -> RoutingDecision:
+    """根据消息返回路由决策。"""
+    user_text = self._extract_user_text(messages)
+    # 1. 媒体规则（视觉）
+    if self._has_images(messages):
+        return self._select_by_capability("vision", ...)
+
+# ⚠️ 允许：英文注释（当术语更通用时）
+def _get_fallback_levels(level: str) -> list[str]:
+    """Return levels to fallback to in order (high → medium → low)."""
+    level_chain = ["high", "medium", "low"]
+    ...
+
+# ❌ 避免：混合语言或无注释
+def process(data):  # 没有说明做什么
+    result = []     # 临时变量，用途不明
+    for item in data:
+        result.append(transform(item))  # transform 是什么？
+    return result
+```
+
+**适用范围**：
+- 模块级 docstring（文件顶部）
+- 类和函数的 docstring
+- inline comments（`# 注释`）
+- section 分隔注释（`# --- Section ---`）
+
+**例外情况**：
+- 技术术语保持英文（如 `asyncio`, `TYPE_CHECKING`, `ProviderAdapter`）
+- API 端点、配置字段等外部接口名称
+- 已有英文注释的历史代码（不建议大规模改动）
+
 ---
 
 ## 核心数据流

@@ -216,7 +216,7 @@ def _prompt_trust_session_cwd_with_natural_language(
     permission_manager: Any,
     shell_ctx: _ShellSessionContext,
 ) -> bool:
-    """Ask whether the current shell directory should be trusted using natural language.
+    """Ask whether the current shell directory should be trusted.
 
     Returns:
         True if authorized, False otherwise.
@@ -228,6 +228,7 @@ def _prompt_trust_session_cwd_with_natural_language(
         PermissionDecision,
         PermissionGrant,
     )
+    from prompt_toolkit.shortcuts import radiolist_dialog
 
     # Check if already granted
     is_granted, _ = permission_manager.check_permission(
@@ -252,30 +253,30 @@ def _prompt_trust_session_cwd_with_natural_language(
         risk_level="low",
     )
 
-    # Generate and display natural language prompt
-    prompt = request.to_natural_language()
-    # Remove rich formatting for cleaner display
-    import re
-    clean_prompt = re.sub(r'\[(/?)[^\]]+\]', '', prompt)
-    console.print(clean_prompt)
+    # Interactive selection dialog
+    path = str(shell_ctx.session_cwd)
+    workspace = str(shell_ctx.workspace)
+    result = radiolist_dialog(
+        title="⚠️ 目录访问权限请求",
+        text=(
+            f"MindBot 需要 访问并作为当前工作目录以下目录:\n"
+            f"  {path}\n\n"
+            f"原因: 当前目录 {path} 在工作目录 {workspace} 之外"
+        ),
+        values=[
+            ("session", "本次允许"),
+            ("always",  "永久允许（推荐）"),
+            ("deny",    "拒绝访问"),
+        ],
+        default="always",
+    ).run()
 
-    # Get user response
-    while True:
-        user_input = typer.prompt("您的回复").strip()
-        decision, confidence = permission_manager._resolver.resolve(user_input)
-
-        if decision == PermissionDecision.CLARIFY:
-            console.print(
-                "[yellow]请明确回复，例如：确认 / 永久允许 / 拒绝[/yellow]"
-            )
-            continue
-
-        break
+    # User cancelled (Esc) → treat as deny
+    if result is None:
+        result = "deny"
 
     # Handle the decision
-    key = permission_manager.grant_key(PermissionType.DIRECTORY_ACCESS, str(shell_ctx.session_cwd))
-
-    if decision == PermissionDecision.GRANT_SESSION:
+    if result == "session":
         permission_manager.add_session_grant(PermissionGrant(
             resource=str(shell_ctx.session_cwd),
             permission_type=PermissionType.DIRECTORY_ACCESS,
@@ -284,33 +285,27 @@ def _prompt_trust_session_cwd_with_natural_language(
         ))
         shell_ctx.session_trusted_paths.add(shell_ctx.session_cwd)
         shell_ctx.session_cwd_authorized = True
-        console.print(f"[green]已授权本次会话访问:[/green] {shell_ctx.session_cwd}")
+        console.print(f"[green]已授权本次会话访问:[/green] {path}")
         return True
 
-    elif decision == PermissionDecision.GRANT_ALWAYS:
+    elif result == "always":
         permission_manager.add_session_grant(PermissionGrant(
             resource=str(shell_ctx.session_cwd),
             permission_type=PermissionType.DIRECTORY_ACCESS,
             scope="persistent",
             granted_at=datetime.now(),
         ))
-        # Persist to config file
         permission_manager._persist_grant(request)
-
         shell_ctx.persisted_trusted_paths.add(shell_ctx.session_cwd)
         shell_ctx.session_cwd_authorized = True
-        console.print(f"[green]已永久授权访问:[/green] {shell_ctx.session_cwd}")
+        console.print(f"[green]已永久授权访问:[/green] {path}")
         return True
 
-    else:  # DENY or DENY_ALWAYS
+    else:  # deny
         shell_ctx.session_cwd_authorized = False
         console.print(
-            f"[yellow]目录未授权.[/yellow] MindBot 将继续使用工作目录 {shell_ctx.workspace}"
+            f"[yellow]目录未授权.[/yellow] MindBot 将继续使用工作目录 {workspace}"
         )
-        if decision == PermissionDecision.DENY_ALWAYS:
-            # Add to denylist
-            permission_manager.add_to_denylist(PermissionType.DIRECTORY_ACCESS, str(shell_ctx.session_cwd))
-        return False
         return False
 
 
@@ -812,6 +807,33 @@ def _cmd_status(bot: Any, shell_ctx: _ShellSessionContext | None = None) -> None
     """Show bot status."""
     console.print(f"  Model:    [cyan]{bot.model}[/cyan]")
     console.print(f"  Provider: [cyan]{bot.provider}[/cyan]")
+
+    # Show health status if routing is enabled
+    if bot.config.routing.auto:
+        health_status = bot.get_health_status()
+        if health_status:
+            console.print("\n  [bold]Provider Health:[/bold]")
+            for key, status in health_status.items():
+                is_healthy = status.get("is_healthy", True)
+                health_color = "green" if is_healthy else "red"
+                health_text = "healthy" if is_healthy else "unhealthy"
+                console.print(f"    {key}: [{health_color}]{health_text}[/{health_color}]")
+
+                # Show probe info if available
+                if "last_probe_time" in status and status["last_probe_time"] > 0:
+                    probe_success = status.get("last_probe_success")
+                    if probe_success is not None:
+                        probe_color = "green" if probe_success else "red"
+                        latency = status.get("last_probe_latency_ms", 0)
+                        console.print(
+                            f"      Last probe: [{probe_color}]{'success' if probe_success else 'failed'}"
+                            f"[/{probe_color}] ({latency:.0f}ms)"
+                        )
+
+                # Show failures count if unhealthy
+                if not is_healthy and "failures" in status:
+                    console.print(f"      Failures: [red]{status['failures']}[/red]")
+
     if shell_ctx is not None:
         console.print(f"  Workspace: [cyan]{shell_ctx.workspace}[/cyan]")
         console.print(f"  Current directory: [cyan]{shell_ctx.session_cwd}[/cyan]")
@@ -839,122 +861,262 @@ def _cmd_config(args: list[str]) -> None:
 @app.command()
 def shell(
     session_id: str = typer.Option("default", "--session", "-s", help="Session ID"),
+    interrupt_mode: bool = typer.Option(
+        True, "--interrupt/--no-interrupt",
+        help="Enable interrupt mode: type new input during AI response to interrupt and continue"
+    ),
 ):
-    """Start interactive shell mode."""
-    from prompt_toolkit import PromptSession
-    from prompt_toolkit.history import FileHistory
-    from prompt_toolkit.styles import Style
+    """Start interactive shell mode.
 
-    config_file = _find_config_file()
-    if not config_file:
-        console.print("[red]Error: Config not found. Run 'mindbot generate-config' first.[/red]")
-        raise typer.Exit(1)
+    With interrupt mode enabled (default), you can type new input at any time
+    to interrupt the AI's response and continue the conversation.
+    """
+    import asyncio
 
-    root = Path.home() / ".mindbot"
-    history_dir = root / "history" / "cli_history"
-    history_dir.parent.mkdir(parents=True, exist_ok=True)
+    async def _run_shell():
+        from prompt_toolkit import PromptSession
+        from prompt_toolkit.history import FileHistory
+        from prompt_toolkit.styles import Style
 
-    style = Style.from_dict({"prompt": "ansicyan bold"})
-    session = PromptSession(
-        history=FileHistory(str(history_dir)),
-        style=style,
-    )
+        config_file = _find_config_file()
+        if not config_file:
+            console.print("[red]Error: Config not found. Run 'mindbot generate-config' first.[/red]")
+            raise typer.Exit(1)
 
-    try:
-        from mindbot import MindBot
-        from mindbot.permissions import PermissionManager
-        bot = MindBot()
-    except Exception as e:
-        console.print(f"[red]Error initializing bot: {e}[/red]")
-        raise typer.Exit(1)
+        root = Path.home() / ".mindbot"
+        history_dir = root / "history" / "cli_history"
+        history_dir.parent.mkdir(parents=True, exist_ok=True)
 
-    shell_ctx = _resolve_shell_session_context(bot, config_file, Path.cwd())
+        style = Style.from_dict({"prompt": "ansicyan bold"})
+        session = PromptSession(
+            history=FileHistory(str(history_dir)),
+            style=style,
+        )
 
-    # Initialize permission manager
-    import json
-    config_data = json.loads(config_file.read_text(encoding="utf-8"))
-    permission_manager = PermissionManager(config=config_data, config_path=config_file)
-    shell_ctx.permission_manager = permission_manager
-
-    # Track pending permission requests
-    pending_permission_id: str | None = None
-
-    def _emit_shell_event_with_permissions(event: Any, state: _ShellEventState) -> None:
-        """Render agent events and track permission requests."""
-        nonlocal pending_permission_id
-        data = getattr(event, "data", {}) or {}
-        event_type = getattr(getattr(event, "type", None), "value", None)
-
-        # Track permission requests
-        if event_type == "permission_request":
-            pending_permission_id = data.get("request_id")
-
-        _emit_shell_event(event, state)
-
-    console.print("[bold green]MindBot Shell[/bold green] (Ctrl+C to exit)")
-    console.print(f"[dim]Session: {session_id} | Model: {bot.model}[/dim]")
-    console.print(f"[dim]Workspace: {shell_ctx.workspace}[/dim]")
-    console.print(f"[dim]Current directory: {shell_ctx.session_cwd}[/dim]")
-
-    # Handle directory authorization with PermissionManager
-    _prompt_trust_session_cwd_with_natural_language(permission_manager, shell_ctx)
-
-    console.print("[dim]Type /help for slash commands[/dim]\n")
-
-    while True:
         try:
-            user_input = session.prompt()
-            if not user_input.strip():
-                continue
-            if user_input.strip().lower() in ["exit", "quit", "bye"]:
-                console.print("[yellow]Goodbye![/yellow]")
-                break
+            from mindbot import MindBot
+            from mindbot.permissions import PermissionManager
+            bot = MindBot()
+        except Exception as e:
+            console.print(f"[red]Error initializing bot: {e}[/red]")
+            raise typer.Exit(1)
 
-            # ---- Slash command handling ----
-            stripped = user_input.strip()
-            if stripped.startswith("/"):
-                _handle_slash_command(stripped, bot, shell_ctx)
-                continue
+        shell_ctx = _resolve_shell_session_context(bot, config_file, Path.cwd())
 
-            # ---- Permission request handling ----
-            if pending_permission_id and permission_manager.has_pending():
-                # This is a permission decision response
-                from mindbot.permissions import PermissionDecision
+        # Initialize permission manager
+        import json
+        config_data = json.loads(config_file.read_text(encoding="utf-8"))
+        permission_manager = PermissionManager(config=config_data, config_path=config_file)
+        shell_ctx.permission_manager = permission_manager
 
-                decision = permission_manager.resolve_from_message(
-                    pending_permission_id, user_input
-                )
+        # Track pending permission requests
+        pending_permission_id: str | None = None
+        accumulated_content: str = ""  # Track accumulated response for interrupt
 
-                if decision == PermissionDecision.CLARIFY:
-                    console.print(
-                        "[yellow]请明确回复：确认本次 / 永久允许 / 拒绝[/yellow]"
-                    )
+        def _emit_shell_event_with_permissions(event: Any, state: _ShellEventState) -> None:
+            """Render agent events and track permission requests."""
+            nonlocal pending_permission_id
+            data = getattr(event, "data", {}) or {}
+            event_type = getattr(getattr(event, "type", None), "value", None)
+
+            # Track permission requests
+            if event_type == "permission_request":
+                pending_permission_id = data.get("request_id")
+
+            _emit_shell_event(event, state)
+
+        console.print("[bold green]MindBot Shell[/bold green] (Ctrl+C to exit)")
+        console.print(f"[dim]Session: {session_id} | Model: {bot.model}[/dim]")
+        console.print(f"[dim]Workspace: {shell_ctx.workspace}[/dim]")
+        console.print(f"[dim]Current directory: {shell_ctx.session_cwd}[/dim]")
+        if interrupt_mode:
+            console.print("[dim]Interrupt mode: [green]ON[/green] - type anytime to interrupt AI response[/dim]")
+
+        # Handle directory authorization with PermissionManager
+        _prompt_trust_session_cwd_with_natural_language(permission_manager, shell_ctx)
+
+        console.print("[dim]Type /help for slash commands[/dim]\n")
+
+        # Current message being built (for interrupt continuation)
+        current_message = ""
+
+        while True:
+            try:
+                # Determine prompt based on state
+                if current_message:
+                    # Continuing from an interrupt
+                    prompt_text = "[continue] "
+                else:
+                    prompt_text = ""
+
+                user_input = await session.prompt_async(prompt_text)
+                if not user_input.strip():
+                    continue
+                if user_input.strip().lower() in ["exit", "quit", "bye"]:
+                    console.print("[yellow]Goodbye![/yellow]")
+                    break
+
+                # ---- Slash command handling ----
+                stripped = user_input.strip()
+                if stripped.startswith("/"):
+                    _handle_slash_command(stripped, bot, shell_ctx)
                     continue
 
-                pending_permission_id = None
-                # Decision has been processed, continue to next prompt
-                continue
+                # ---- Permission request handling ----
+                if pending_permission_id and permission_manager.has_pending():
+                    from mindbot.permissions import PermissionDecision
 
-            console.print("[dim]Thinking...[/dim]")
-            import asyncio
-            state = _ShellEventState()
-            turn_tools = _build_shell_turn_tools(bot, shell_ctx)
-            agent_response = asyncio.run(
-                bot.chat(
-                    user_input,
-                    session_id=session_id,
-                    tools=turn_tools,
-                    on_event=lambda event: _emit_shell_event_with_permissions(event, state),
-                )
-            )
-            _render_shell_response(agent_response.content, state)
-        except KeyboardInterrupt:
-            console.print("\n[yellow]Use 'exit' or Ctrl+D to quit[/yellow]")
+                    decision = permission_manager.resolve_from_message(
+                        pending_permission_id, user_input
+                    )
+
+                    if decision == PermissionDecision.CLARIFY:
+                        console.print(
+                            "[yellow]请明确回复：确认本次 / 永久允许 / 拒绝[/yellow]"
+                        )
+                        continue
+
+                    pending_permission_id = None
+                    continue
+
+                # Append new input to current message (for interrupt continuation)
+                if current_message:
+                    current_message += "\n\n" + user_input
+                else:
+                    current_message = user_input
+
+                if interrupt_mode:
+                    # Run with interrupt support
+                    await _run_with_interrupt(
+                        bot, session, shell_ctx, session_id,
+                        current_message, _emit_shell_event_with_permissions
+                    )
+                    # Reset current message after successful completion
+                    current_message = ""
+                else:
+                    # Original blocking mode
+                    console.print("[dim]Thinking...[/dim]")
+                    state = _ShellEventState()
+                    turn_tools = _build_shell_turn_tools(bot, shell_ctx)
+                    agent_response = await bot.chat(
+                        current_message,
+                        session_id=session_id,
+                        tools=turn_tools,
+                        on_event=lambda event: _emit_shell_event_with_permissions(event, state),
+                    )
+                    _render_shell_response(agent_response.content, state)
+                    current_message = ""
+
+            except KeyboardInterrupt:
+                console.print("\n[yellow]Interrupted. Type 'exit' or Ctrl+D to quit.[/yellow]")
+                current_message = ""  # Clear partial message on interrupt
+            except EOFError:
+                console.print("\n[yellow]Goodbye![/yellow]")
+                break
+            except Exception as e:
+                console.print(f"[red]Error: {e}[/red]")
+                current_message = ""
+
+    asyncio.run(_run_shell())
+
+
+async def _run_with_interrupt(
+    bot: Any,
+    session: Any,
+    shell_ctx: Any,
+    session_id: str,
+    message: str,
+    emit_event_fn: Any,
+) -> None:
+    """Run AI response with interrupt support.
+
+    Concurrently listens for user input while streaming AI response.
+    If user types during response, interrupt and continue with combined message.
+    """
+    import asyncio
+    from prompt_toolkit.patch_stdout import patch_stdout
+
+    state = _ShellEventState()
+    turn_tools = _build_shell_turn_tools(bot, shell_ctx)
+    accumulated_content: str = ""
+
+    # Flag to track if we should continue listening
+    interrupted = False
+    new_input: str | None = None
+
+    async def stream_response():
+        """Stream AI response and accumulate content."""
+        nonlocal accumulated_content
+        try:
+            async for chunk in bot.chat_stream(
+                message,
+                session_id=session_id,
+                tools=turn_tools,
+            ):
+                if interrupted:
+                    break
+                if chunk:
+                    if not state.line_open:
+                        console.print()
+                        state.line_open = True
+                    console.print(chunk, end="")
+                    accumulated_content += chunk
+                    state.saw_delta = True
+        except asyncio.CancelledError:
+            pass
+
+    async def listen_for_input():
+        """Listen for user input to interrupt."""
+        nonlocal interrupted, new_input
+        try:
+            # Use patch_stdout to allow input while printing
+            with patch_stdout():
+                new_input = await session.prompt_async("")
+                interrupted = True
+        except asyncio.CancelledError:
+            pass
         except EOFError:
-            console.print("\n[yellow]Goodbye![/yellow]")
-            break
-        except Exception as e:
-            console.print(f"[red]Error: {e}[/red]")
+            pass
+
+    # Run both tasks concurrently
+    stream_task = asyncio.create_task(stream_response())
+    input_task = asyncio.create_task(listen_for_input())
+
+    # Wait for either task to complete
+    done, pending = await asyncio.wait(
+        [stream_task, input_task],
+        return_when=asyncio.FIRST_COMPLETED,
+    )
+
+    # Cancel the other task
+    for task in pending:
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+    # Finish line if we were printing
+    if state.line_open:
+        console.print()
+        state.line_open = False
+
+    # If interrupted, show message and prepare for continuation
+    if interrupted and new_input:
+        console.print("\n[yellow]⏎ Interrupted. Appending your message...[/yellow]")
+
+        # Check if new input is a command
+        stripped = new_input.strip()
+        if stripped.startswith("/"):
+            _handle_slash_command(stripped, bot, shell_ctx)
+            return
+        if stripped.lower() in ["exit", "quit", "bye"]:
+            console.print("[yellow]Goodbye![/yellow]")
+            raise SystemExit(0)
+
+        # Store accumulated content as context for next turn
+        # The message will be combined in the main loop
+        return new_input
 
 
 # ======================================================================

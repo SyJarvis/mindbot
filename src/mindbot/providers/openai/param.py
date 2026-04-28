@@ -20,3 +20,4 @@ class OpenAIProviderParam(BaseProviderParam):
     max_tokens: int | None = None
     vision_enabled: bool = False
     extra: dict[str, Any] = field(default_factory=dict)
+    context_window: int | None = None  # override model context window if set
