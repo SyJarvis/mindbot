@@ -5,7 +5,7 @@
 </div>
 
 <p align="center">
-  <a href="https://github.com/SyJarvis/mindbot"><img src="https://img.shields.io/badge/Version-0.3.4-blue.svg" alt="Version"></a>
+  <a href="https://github.com/SyJarvis/mindbot"><img src="https://img.shields.io/badge/Version-0.3.5-blue.svg" alt="Version"></a>
   <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3.10+-blue?logo=python" alt="Python"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License"></a>
 </p>
@@ -18,11 +18,14 @@
 
 ## 📢 News
 
-- **2026-04-21** 📦 **uv 包管理** — 迁移到 uv 管理依赖，更快的安装和锁定
-- **2026-04-20** 🧠 **Memory 重构** — 四级向量记忆系统，支持语义检索和智能遗忘
-- **2026-04-10** 🚀 **实时配置系统** — ConfigBus 事件总线、AuthManager 授权管理
-- **2026-04-09** 🏗️ **ACP 协议支持** — Agent Client Protocol 通道，支持 Claude Code、Codex 等外部 Agent
-- **2026-04-02** 📊 **Agent Benchmark** — ToolCall-15 和 Real-Tools benchmark 框架
+- **2026-04-28** 🔄 **Hailo NPU + 动态健康监控** — Hailo-10H 硬件直连推理、Provider 后台探测静默恢复
+- **2026-04-23** 🔐 **权限审批系统** — 工具执行通用审批机制，白名单/按需确认
+- **2026-04-22** ⚙️ **向量记忆配置** — Memory 向量检索与遗忘策略可配置
+- **2026-04-21** 📦 **uv 包管理** — 迁移到 uv 管理依赖
+- **2026-04-20** 🧠 **Memory 重构** — 四级向量记忆系统
+- **2026-04-10** 🚀 **实时配置系统** — ConfigBus 事件总线
+- **2026-04-09** 🏗️ **ACP 协议支持** — Agent Client Protocol 通道
+- **2026-04-02** 📊 **Agent Benchmark** — ToolCall-15 benchmark
 
 <details>
 <summary>Earlier news</summary>
@@ -41,6 +44,8 @@
 - 🪶 **轻量高效** — 纯 Python + asyncio，五层架构设计
 - 🧠 **长期记忆** — Markdown 存储，向量检索，自动归档
 - 🎯 **智能路由** — 根据内容类型/复杂度/关键词自动选择模型
+- 🔌 **上下文窗口透传** — Provider 自动报告模型上下文容量，ContextManager 自动适配压缩阈值
+- 🔄 **动态健康监控** — 后台探测不活跃 Provider，静默恢复自动加回可用池
 - 🔒 **工具确认** — 多级安全确认机制（白名单、危险工具检测）
 - 🛡️ **路径安全** — 文件工具路径策略 + Shell 执行边界控制
 - 💬 **多通道** — CLI、HTTP、飞书、Telegram
@@ -71,12 +76,13 @@ pip install -e ".[dev]"    # 开发依赖
 
 ### 1. 配置 LLM
 
-MindBot 支持四种 LLM 适配器：
+MindBot 支持五种 LLM 适配器：
 
 | 适配器 | 说明 | 适用场景 |
 |--------|------|----------|
 | `ollama` | 本地运行，无需 API Key | 开发测试、私有部署 |
 | `openai` | OpenAI API 或兼容服务 | 云服务、生产环境 |
+| `hailo` | Hailo NPU 硬件直连推理 | 树莓派 5 + Hailo-10H 边缘设备 |
 | `llama_cpp` | llama.cpp 本地推理 | 低资源环境 |
 | `transformers` | HuggingFace 模型 | 研究实验 |
 
@@ -147,6 +153,45 @@ export OPENAI_API_KEY=your-api-key
 }
 ```
 
+#### Hailo NPU（边缘设备）
+
+适用于树莓派 5 + AI HAT+（Hailo-10H），直接通过 HailoRT SDK 在 NPU 上运行 LLM 推理，零网络开销。
+
+```json
+{
+  "providers": {
+    "local-hailo": {
+      "type": "hailo",
+      "endpoints": [{
+        "base_url": "local",
+        "temperature": 0.7,
+        "models": [{ "id": "qwen3:1.7b", "role": "chat", "level": "low" }]
+      }]
+    }
+  },
+  "agent": {
+    "model": "local-hailo/qwen3:1.7b"
+  }
+}
+```
+
+> Hailo 适配器会自动从 HEF 模型中读取 KV cache 上下文容量，并透传给 ContextManager，无需手动配置 `context.max_tokens`。
+
+#### 动态健康监控
+
+```json
+{
+  "routing": {
+    "health_probe": {
+      "enabled": true,
+      "probe_interval_seconds": 30
+    }
+  }
+}
+```
+
+后台探测不活跃 Provider，恢复后自动加回可用池。
+
 ### 2. 初始化配置
 
 ```bash
@@ -204,11 +249,11 @@ mindbot shell
 | `/model` | 列出所有可用模型 |
 | `/model <name>` | 切换到指定模型（如 `/model local-ollama/qwen3`）|
 | `/config` | 实时配置命令（授权、设置）|
-| `/status` | 显示当前状态 |
+| `/status` | 显示当前状态和 Provider 健康状态 |
 | `/help` | 显示帮助 |
 | `exit` / `quit` / `bye` | 退出 Shell |
 
-> 使用向上/向下方向键可浏览历史输入，历史存储在 `~/.mindbot/history/`
+> 使用方向键浏览历史输入
 
 ---
 
@@ -334,7 +379,8 @@ MindBot 采用 **五层分层架构**，各层之间通过明确的边界规则�
 ├─────────────────────────────────────────────────────────────┤
 │  L5 基础设施适配层                                           │
 │  providers/* + routing/* + config/*                         │
-│  LLM Provider 适配、模型路由选择、配置加载与热更新            │
+│  LLM Provider 适配（OpenAI/Ollama/Hailo/Transformers）、     │
+│  模型路由选择、上下文窗口透传、配置加载与热更新                │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -344,7 +390,7 @@ MindBot 采用 **五层分层架构**，各层之间通过明确的边界规则�
 | L2 | 对话主链路编排 | `bot.py`, `agent/core.py`, `agent/turn_engine.py` |
 | L3 | 上下文管理、token 预算 | `context/manager.py`, `context/models.py` |
 | L4 | 工具执行、记忆检索 | `capability/*`, `memory/*`, `skills/*` |
-| L5 | LLM Provider、模型路由 | `providers/*`, `routing/*`, `config/*` |
+| L5 | LLM Provider、模型路由、上下文窗口透传 | `providers/*`, `routing/*`, `config/*` |
 
 ### 核心设计原则
 

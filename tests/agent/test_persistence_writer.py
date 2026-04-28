@@ -226,7 +226,7 @@ class TestJournalCommit:
                 turn_id="turn-1",
                 iteration=0,
                 message_kind="assistant_tool_call",
-                provider=ProviderInfo(provider="openai", model="gpt-test"),
+                provider=ProviderInfo(provider="openai", model="gpt-test", context_window=None),
                 usage=UsageInfo(prompt_tokens=11, completion_tokens=3, total_tokens=14),
                 finish_reason="tool_calls",
             ),
@@ -267,6 +267,7 @@ class TestJournalCommit:
             "model": "gpt-test",
             "supports_vision": False,
             "supports_tools": False,
+            "context_window": None,
         }
         assert assistant_tool_msg.usage == {
             "prompt_tokens": 11,

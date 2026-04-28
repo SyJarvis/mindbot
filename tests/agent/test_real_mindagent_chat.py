@@ -17,6 +17,7 @@ import pytest
 USER_MESSAGE = "查看~/research目录下有啥文件..."
 
 
+@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_real_mindagent_chat_list_research_dir() -> None:
     """用真实 MindAgent 发送「查看~/research目录下有啥文件」，打印 AI 回复。"""

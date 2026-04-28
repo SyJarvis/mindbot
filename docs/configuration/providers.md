@@ -120,3 +120,18 @@ MindBot 支持多种 LLM Provider，统一通过 `providers` 配置项管理。
 | `models[].role` | string | 角色：`chat`、`embed` |
 | `models[].level` | string | 等级：`low`、`medium`、`high` |
 | `models[].vision` | bool | 是否支持视觉 |
+
+## 故障恢复与健康检查
+
+当某个端点请求失败时，系统会自动标记为 `inactive` 并跳过该端点。**5 分钟内**不会再次尝试该端点，避免重复请求已失效的服务。
+
+后台健康监控（HealthMonitor）每 30 秒探测一次 `inactive` 端点，探测成功后自动恢复为 `active` 状态。
+
+### 自动降级机制
+
+当路由开启（`routing.auto: true`）时，请求会按以下优先级选择模型：
+
+1. **同等级候选**：匹配当前任务等级的模型
+2. **降级候选**：同等级全部失败后，自动降级到 `medium` → `low` 等级
+
+例如，一个 `high` 等级的任务会先尝试所有 `level: high` 的模型，全部失败后会继续尝试 `level: medium` 和 `level: low` 的模型。
