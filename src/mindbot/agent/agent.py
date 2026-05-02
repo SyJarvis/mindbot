@@ -144,7 +144,6 @@ class Agent:
             str,
             tuple[bool, frozenset[tuple[str, int]]],
         ] = {}
-        self._capability_tool_cache: dict[str, Tool] = {}
         self._journal: "SessionJournal | None" = None
         self._journal_sessions: set[str] = set()
 
@@ -169,30 +168,25 @@ class Agent:
         """Return all registered tools."""
         if self._capability_facade is not None:
             visible: list[Tool] = []
-            live_ids: set[str] = set()
+            seen: set[str] = set()
             for cap in self._capability_facade.list_capabilities():
-                live_ids.add(cap.id)
-                cached = self._capability_tool_cache.get(cap.id)
-                if (
-                    cached is None
-                    or cached.name != cap.name
-                    or cached.description != cap.description
-                    or cached.parameters_schema_override != cap.parameters_schema
-                ):
-                    cached = _capability_to_llm_tool(cap)
-                    self._capability_tool_cache[cap.id] = cached
-                visible.append(cached)
-            stale_ids = [cap_id for cap_id in self._capability_tool_cache if cap_id not in live_ids]
-            for cap_id in stale_ids:
-                del self._capability_tool_cache[cap_id]
+                if cap.id in seen:
+                    continue
+                seen.add(cap.id)
+                # Prefer original Tool from registry (preserves handler).
+                # Dynamic tools (not in registry) fall back to capability conversion.
+                original = self.tool_registry.get(cap.name)
+                if original is not None:
+                    visible.append(original)
+                else:
+                    visible.append(_capability_to_llm_tool(cap))
             return visible
         return self.tool_registry.list_tools()
 
     def refresh_capabilities(self) -> None:
-        """Refresh capability-backed tools and invalidate cached orchestrators."""
+        """Refresh capability-backed tools and invalidate cached turn engines."""
         if self._capability_facade is not None:
             self._capability_facade.refresh_registry()
-        self._capability_tool_cache.clear()
         self._turn_engines.clear()
         self._turn_engine_tool_signatures.clear()
 
@@ -305,7 +299,7 @@ class Agent:
         )
 
     # ------------------------------------------------------------------
-    # Orchestrator cache (per session)
+    # Turn engine cache (per session)
     # ------------------------------------------------------------------
 
     def _get_turn_engine(
