@@ -166,8 +166,17 @@ class FeishuChannel(BaseChannel):
             log_level=lark.LogLevel.INFO,
         )
 
-        # Start WebSocket client in a separate thread with reconnect loop
+        # Start WebSocket client in a separate thread with its own event loop.
+        # lark.ws.Client.start() uses a module-level `loop` that calls
+        # run_until_complete(), so we must create a fresh loop in this thread
+        # and patch the module variable before calling start().
         def run_ws():
+            import lark_oapi.ws.client as _ws_mod
+
+            ws_loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(ws_loop)
+            _ws_mod.loop = ws_loop  # patch module-level loop
+
             while self._running:
                 try:
                     logger.info("Feishu WebSocket connecting...")
@@ -179,6 +188,8 @@ class FeishuChannel(BaseChannel):
 
                     logger.info("Reconnecting in 5 seconds...")
                     time.sleep(5)
+
+            ws_loop.close()
 
         self._ws_thread = threading.Thread(target=run_ws, daemon=True)
         self._ws_thread.start()
@@ -194,11 +205,18 @@ class FeishuChannel(BaseChannel):
     async def stop(self) -> None:
         """Stop the Feishu bot."""
         self._running = False
-        if self._ws_client:
+        # Close the WebSocket connection directly; lark-oapi ws Client
+        # has no stop() method.
+        if self._ws_client and self._ws_client._conn:
             try:
-                self._ws_client.stop()
+                import lark_oapi.ws.client as _ws_mod
+                ws_loop = _ws_mod.loop
+                if ws_loop.is_running():
+                    ws_loop.call_soon_threadsafe(
+                        lambda: asyncio.ensure_future(self._ws_client._disconnect(), loop=ws_loop)
+                    )
             except Exception as e:
-                logger.warning(f"Error stopping WebSocket client: {e}")
+                logger.warning(f"Error disconnecting Feishu WebSocket: {e}")
         logger.info("Feishu bot stopped")
 
     def _add_reaction_sync(self, message_id: str, emoji_type: str) -> None:
