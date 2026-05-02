@@ -113,6 +113,8 @@ class RoutingProviderAdapter:
         self,
         messages: list[Message],
         model: str | None = None,
+        tools: list[Any] | None = None,
+        tool_calls_out: list[Any] | None = None,
         **kwargs: Any,
     ) -> AsyncIterator[str]:
         decision = self._router.select_model(messages)
@@ -141,7 +143,8 @@ class RoutingProviderAdapter:
             try:
                 adapter = self._get_adapter(instance, endpoint_idx, model_id)
                 async for chunk in adapter.chat_stream(
-                    messages, model=model or model_id, **kwargs
+                    messages, model=model or model_id,
+                    tools=tools, tool_calls_out=tool_calls_out, **kwargs
                 ):
                     yield chunk
                 self._endpoint_manager.record_success(instance, endpoint_idx)

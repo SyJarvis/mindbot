@@ -422,23 +422,32 @@ class Agent:
         session_id: str = "default",
         tools: list[Any] | None = None,
     ) -> AsyncIterator[str]:
-        """Streaming chat.
+        """流式对话，逐 token 输出。
 
-        Streams token-by-token when no tools are active.  When tools are active
-        the full turn runs first and the final content is yielded as a single
-        chunk (tool calls require a complete response to parse).
+        直接从 TurnEngine.run_stream() 逐 token yield，
+        流结束后自动持久化（无需 Queue / create_task）。
 
         Yields:
             String chunks of the assistant response.
         """
         turn_context = self._build_turn_context(tools)
-        response = await self._run_turn(
-            message=message,
+        input_builder = self._get_session_input_builder(session_id)
+        messages = input_builder.build(message, session_id=session_id)
+        user_timestamp = messages[-1].timestamp if messages and messages[-1].role == "user" else None
+        turn_engine = self._get_turn_engine(session_id, turn_context)
+
+        async for chunk in turn_engine.run_stream(messages):
+            yield chunk
+
+        # 流结束，做持久化
+        response = turn_engine.last_stream_response
+        writer = self._get_persistence_writer(session_id)
+        writer.commit_turn(
+            message,
+            response,
             session_id=session_id,
-            turn_context=turn_context,
+            user_timestamp=user_timestamp,
         )
-        if response.content:
-            yield response.content
 
     # ------------------------------------------------------------------
     # Repr

@@ -295,6 +295,7 @@ class AgentOrchestrator:
                     on_event(AgentEvent.tool_executing(
                         tool_name=tool_call.name,
                         call_id=tool_call.id,
+                        arguments=tool_call.arguments,
                     ))
 
             except asyncio.TimeoutError:

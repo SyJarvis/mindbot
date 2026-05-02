@@ -29,6 +29,8 @@ class TransformersProvider(Provider):
         self,
         messages: list[Message],
         model: str | None = None,
+        tools: list[Any] | None = None,
+        tool_calls_out: list[Any] | None = None,
         **kwargs: Any,
     ) -> AsyncIterator[str]:
         raise NotImplementedError("transformers provider is not yet implemented")
