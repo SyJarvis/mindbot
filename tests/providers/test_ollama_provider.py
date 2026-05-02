@@ -171,7 +171,21 @@ class TestOllamaProviderChatStream:
     async def test_chat_stream_fallback_when_tools_bound(
         self, mock_httpx_client: MagicMock, sample_text_message: Message
     ) -> None:
-        """Should fall back to non-streaming when tools are bound."""
+        """绑定 tools 时 chat_stream 仍走流式。"""
+        # 设置流式 mock
+        async def mock_stream_lines():
+            yield '{"message": {"content": "Hello"}}'
+            yield '{"done": true}'
+
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+        mock_response.aiter_lines = mock_stream_lines
+
+        mock_cm = MagicMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_cm.__aexit__ = AsyncMock(return_value=False)
+        mock_httpx_client.stream = MagicMock(return_value=mock_cm)
+
         param = OllamaProviderParam(model="qwen3:1.7b")
         with patch("httpx.AsyncClient", return_value=mock_httpx_client):
             provider = OllamaProvider(param)
@@ -180,8 +194,8 @@ class TestOllamaProviderChatStream:
             async for chunk in bound_provider.chat_stream([sample_text_message]):
                 chunks.append(chunk)
 
-            # Should get single chunk from non-streaming response
-            assert len(chunks) == 1
+            # 绑定工具后仍然走流式
+            assert len(chunks) > 0
 
 
 class TestOllamaProviderEmbed:

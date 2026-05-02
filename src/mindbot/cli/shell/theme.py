@@ -142,9 +142,6 @@ def get_prompt_style(theme: ShellTheme | None = None) -> Style:
     })
 
 
-# 别名：get_app_style 保留兼容
-get_app_style = get_prompt_style
-
 
 # --- 全局主题状态 ---
 

@@ -8,7 +8,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-import typer
 from rich.console import Console
 
 console = Console()
@@ -89,47 +88,6 @@ def persist_trusted_path(config_file: Path, trusted_path: Path) -> None:
     if trusted_text not in trusted_paths:
         trusted_paths.append(trusted_text)
         config_file.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-
-
-def prompt_trust_session_cwd(bot: Any, shell_ctx: ShellSessionContext) -> None:
-    """询问当前 shell 目录是否应被信任。"""
-    if shell_ctx.session_cwd_authorized is not None:
-        return
-
-    console.print(
-        "[yellow]Current directory is outside the configured workspace.[/yellow]\n"
-        f"  Workspace: {shell_ctx.workspace}\n"
-        f"  Current directory: {shell_ctx.session_cwd}\n"
-        "Authorize this directory so MindBot can use it as the default current "
-        "directory for this shell session?\n"
-        "[dim]This does not enable an OS-level shell sandbox.[/dim]"
-    )
-    choice = typer.prompt(
-        "Choose [session/persist/deny]",
-        default="session",
-        show_default=True,
-    ).strip().lower()
-
-    if choice in {"persist", "p", "always"}:
-        persist_trusted_path(shell_ctx.config_file, shell_ctx.session_cwd)
-        if str(shell_ctx.session_cwd) not in bot.config.agent.trusted_paths:
-            bot.config.agent.trusted_paths.append(str(shell_ctx.session_cwd))
-        shell_ctx.persisted_trusted_paths.add(shell_ctx.session_cwd)
-        shell_ctx.session_cwd_authorized = True
-        console.print(f"[green]Trusted and persisted:[/green] {shell_ctx.session_cwd}")
-        return
-
-    if choice in {"session", "s", "once"}:
-        shell_ctx.session_trusted_paths.add(shell_ctx.session_cwd)
-        shell_ctx.session_cwd_authorized = True
-        console.print(f"[green]Trusted for this session:[/green] {shell_ctx.session_cwd}")
-        return
-
-    shell_ctx.session_cwd_authorized = False
-    console.print(
-        f"[yellow]Current directory not trusted.[/yellow] MindBot will continue using "
-        f"workspace {shell_ctx.workspace}"
-    )
 
 
 async def prompt_trust_session_cwd_with_natural_language(

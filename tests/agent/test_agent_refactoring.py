@@ -57,6 +57,8 @@ class FakeLLM:
         self,
         messages: list[Message],
         model: str | None = None,
+        tools: list[Any] | None = None,
+        tool_calls_out: list[Any] | None = None,
         **kwargs: Any,
     ) -> AsyncIterator[str]:
         self.stream_calls.append(messages)
@@ -95,10 +97,15 @@ class SequenceLLM(FakeLLM):
         self,
         messages: list[Message],
         model: str | None = None,
+        tools: list[Any] | None = None,
+        tool_calls_out: list[Any] | None = None,
         **kwargs: Any,
     ) -> AsyncIterator[str]:
         self.stream_calls.append(messages)
+        self.bound_tools.append(tools)
         response = self._responses.pop(0)
+        if tool_calls_out is not None and response.tool_calls:
+            tool_calls_out.extend(response.tool_calls)
         if response.content:
             yield response.content
 

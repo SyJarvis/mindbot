@@ -153,18 +153,27 @@ class TestOpenAIProviderChatStream:
     async def test_chat_stream_fallback_when_tools_bound(
         self, mock_openai_client: MagicMock, sample_text_message: Message
     ) -> None:
-        """Should fall back to non-streaming when tools are bound."""
+        """绑定 tools 时 chat_stream 仍走流式（通过 effective_tools 传给 API）。"""
+        # 设置流式 mock（返回 async iterator）
+        async def mock_stream_iter():
+            chunks = [MagicMock(choices=[MagicMock(delta=MagicMock(content=c, tool_calls=None))]) for c in ["Hello"]]
+            for chunk in chunks:
+                yield chunk
+
+        mock_stream = MagicMock()
+        mock_stream.__aiter__ = lambda self: mock_stream_iter()
+        mock_openai_client.chat.completions.create = AsyncMock(return_value=mock_stream)
+
         param = OpenAIProviderParam(model="gpt-4o-mini")
         with patch("openai.AsyncOpenAI", return_value=mock_openai_client):
             provider = OpenAIProvider(param)
-            # Bind tools (even empty list triggers fallback)
             bound_provider = provider.bind_tools([])
             chunks = []
             async for chunk in bound_provider.chat_stream([sample_text_message]):
                 chunks.append(chunk)
 
-            # Should get single chunk from non-streaming response
-            assert len(chunks) == 1
+            # 绑定工具后仍然走流式，收到流式 token chunks
+            assert len(chunks) > 0
 
 
 class TestOpenAIProviderEmbed:

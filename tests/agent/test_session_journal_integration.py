@@ -66,8 +66,16 @@ class FakeLLM:
         self,
         messages: list[Message],
         model: str | None = None,
+        tools: list[Any] | None = None,
+        tool_calls_out: list[Any] | None = None,
         **kwargs: Any,
     ) -> AsyncIterator[str]:
+        self._call_count += 1
+        if self._tool_calls and self._call_count == 1:
+            # 第一次调用返回 tool_calls（通过 tool_calls_out）
+            if tool_calls_out is not None:
+                tool_calls_out.extend(self._tool_calls)
+            return
         yield self._response_text
 
     def bind_tools(self, tools: list[Any]) -> "FakeLLM":
@@ -272,7 +280,7 @@ async def test_tool_call_preamble_is_not_mixed_into_final_assistant(tmp_path):
                 )
             return ChatResponse(content="最终答案", finish_reason=FinishReason.STOP)
 
-    fake_llm = PreambleToolLLM()
+    fake_llm = PreambleToolLLM(response_text="最终答案", tool_calls=[ToolCall(id="tc1", name="test_tool", arguments={})])
     agent = _make_agent(config, fake_llm=fake_llm)
 
     await agent.chat("检查一下", session_id="s1")
