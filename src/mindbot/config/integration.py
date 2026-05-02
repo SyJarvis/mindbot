@@ -4,15 +4,12 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from mindbot.config.bus import ConfigBus
 from mindbot.config.persistence import ConfigPersistence
 from mindbot.config.sync import ConfigSync
 from mindbot.auth.manager import AuthManager
-
-if TYPE_CHECKING:
-    from mindbot.agent.orchestrator import AgentOrchestrator
 
 logger = logging.getLogger(__name__)
 
@@ -103,24 +100,6 @@ class AgentConfigIntegration:
     ) -> None:
         """授权工具使用"""
         await self.auth.grant(user_id, tool_name, allowed, expires_in)
-
-    def integrate_with_orchestrator(self, orchestrator: AgentOrchestrator) -> None:
-        """集成到现有的 AgentOrchestrator
-
-        这会将 ConfigBus 的授权检查与现有的 ApprovalManager 结合
-        """
-        # 订阅全局配置变更
-        self.bus.subscribe("global", "temperature", self._on_temperature_change)
-        self.bus.subscribe("global", "system_prompt", self._on_system_prompt_change)
-        self._subscribed = True
-
-    def _on_temperature_change(self, old: Any, new: Any) -> None:
-        """温度配置变更回调"""
-        logger.info(f"Temperature changed: {old} -> {new}")
-
-    def _on_system_prompt_change(self, old: Any, new: Any) -> None:
-        """系统提示词变更回调"""
-        logger.info("System prompt updated")
 
     @property
     def version(self) -> int:

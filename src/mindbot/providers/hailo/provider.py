@@ -211,9 +211,12 @@ class HailoProvider(Provider):
         self,
         messages: list[Message],
         model: str | None = None,
+        tools: list[Any] | None = None,
+        tool_calls_out: list[Any] | None = None,
         **kwargs: Any,
     ) -> AsyncIterable[str]:
-        if self._bound_tools is not None:
+        effective_tools = tools if tools is not None else self._bound_tools
+        if effective_tools is not None:
             resp = await self.chat(messages, model=model, **kwargs)
             if resp.content:
                 yield resp.content

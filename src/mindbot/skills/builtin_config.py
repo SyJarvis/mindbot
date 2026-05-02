@@ -18,26 +18,16 @@ class ConfigSkill:
     def __init__(self):
         self.integration = None
 
-    def _get_integration(self) -> AgentConfigIntegration:
+    async def _get_integration(self) -> AgentConfigIntegration:
         """延迟初始化 ConfigIntegration"""
         if self.integration is None:
-            import asyncio
             from pathlib import Path
             self.integration = AgentConfigIntegration(
                 persistence_path=Path.home() / ".mindbot" / "config_store.json",
                 enable_persistence=True,
             )
-            # 同步初始化
-            try:
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    import asyncio
-                    asyncio.create_task(self.integration.initialize())
-                else:
-                    loop.run_until_complete(self.integration.initialize())
-            except RuntimeError:
-                # 没有事件循环，创建新的
-                asyncio.run(self.integration.initialize())
+            # 异步初始化（调用方已在 async 上下文中）
+            await self.integration.initialize()
         return self.integration
 
     def get_skills(self) -> list[Skill]:
@@ -156,7 +146,7 @@ class ConfigSkill:
 
     async def _handle_config_set(self, scope: str, key: str, value: str) -> str:
         """处理配置设置"""
-        integration = self._get_integration()
+        integration = await self._get_integration()
 
         # 尝试转换值为合适的类型
         converted_value = self._convert_value(value)
@@ -166,7 +156,7 @@ class ConfigSkill:
 
     async def _handle_config_get(self, scope: str, key: str) -> str:
         """处理配置获取"""
-        integration = self._get_integration()
+        integration = await self._get_integration()
         value = await integration.get(scope, key)
 
         if value is None:
@@ -175,7 +165,7 @@ class ConfigSkill:
 
     async def _handle_config_list(self, scope: str = None) -> str:
         """处理配置列表"""
-        integration = self._get_integration()
+        integration = await self._get_integration()
 
         lines = ["📋 配置列表:"]
 
@@ -208,7 +198,7 @@ class ConfigSkill:
         expires_in: int = None,
     ) -> str:
         """处理授权"""
-        integration = self._get_integration()
+        integration = await self._get_integration()
 
         await integration.grant_auth(user_id, tool_name, allowed=True, expires_in=expires_in)
 
@@ -218,13 +208,13 @@ class ConfigSkill:
 
     async def _handle_auth_revoke(self, user_id: str, tool_name: str) -> str:
         """处理撤销授权"""
-        integration = self._get_integration()
+        integration = await self._get_integration()
         await integration.auth.revoke(user_id, tool_name)
         return f"✓ 已撤销 {user_id} 对 {tool_name} 的授权"
 
     async def _handle_auth_check(self, user_id: str, tool_name: str) -> str:
         """处理授权检查"""
-        integration = self._get_integration()
+        integration = await self._get_integration()
         allowed, reason = await integration.check_auth(user_id, tool_name)
 
         if allowed:

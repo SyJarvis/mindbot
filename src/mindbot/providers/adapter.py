@@ -61,9 +61,13 @@ class ProviderAdapter:
         self,
         messages: list[Message],
         model: str | None = None,
+        tools: list[Tool] | None = None,
+        tool_calls_out: list[Any] | None = None,
         **kwargs: Any,
     ) -> AsyncIterator[str]:
-        async for chunk in self._provider.chat_stream(messages, model=model, **kwargs):
+        async for chunk in self._provider.chat_stream(
+            messages, model=model, tools=tools, tool_calls_out=tool_calls_out, **kwargs
+        ):
             yield chunk
 
     # -- Embeddings -----------------------------------------------------

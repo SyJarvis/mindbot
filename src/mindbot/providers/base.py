@@ -54,13 +54,15 @@ class Provider(ABC):
         self,
         messages: list[Message],
         model: str | None = None,
+        tools: list[Any] | None = None,
+        tool_calls_out: list[Any] | None = None,
         **kwargs: Any,
     ) -> AsyncIterator[str]:
         """Async streaming chat – yields text chunks as they arrive.
 
-        When the provider has tools bound and the model triggers a function
-        call, implementations should fall back to ``chat`` and yield the
-        full text as a single chunk.
+        When *tools* are provided and *tool_calls_out* is a list,
+        implementations should stream with tools enabled and append
+        parsed ToolCall objects to *tool_calls_out* after the stream ends.
         """
         yield ""  # pragma: no cover
 

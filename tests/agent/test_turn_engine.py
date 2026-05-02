@@ -36,9 +36,18 @@ class FakeLLMAdapter:
         self._call_idx += 1
         return resp
 
-    async def chat_stream(self, messages: list[Message], **kw: Any) -> AsyncIterator[str]:
+    async def chat_stream(
+        self,
+        messages: list[Message],
+        tools: list[Any] | None = None,
+        tool_calls_out: list[Any] | None = None,
+        **kw: Any,
+    ) -> AsyncIterator[str]:
         resp = self._responses[self._call_idx]
         self._call_idx += 1
+        # 如果响应有 tool_calls，推入 tool_calls_out
+        if tool_calls_out is not None and resp.tool_calls:
+            tool_calls_out.extend(resp.tool_calls)
         if resp.content:
             yield resp.content
 

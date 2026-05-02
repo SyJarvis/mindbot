@@ -334,25 +334,43 @@ class OllamaProvider(Provider):
         self,
         messages: list[Message],
         model: str | None = None,
+        tools: list[Any] | None = None,
+        tool_calls_out: list[Any] | None = None,
         **kwargs: Any,
     ) -> AsyncIterator[str]:
-        if self._bound_tools is not None:
-            resp = await self.chat(messages, model=model, **kwargs)
-            if resp.content:
-                yield resp.content
-            return
+        """流式对话，同时支持工具调用。
 
+        通过 tool_calls_out 可变列表返回解析后的 tool_calls，
+        文本内容通过 yield 逐 token 返回。
+        """
+        effective_tools = tools if tools is not None else self._bound_tools
         ollama_msgs = self._to_ollama_messages(messages)
-        body = self._build_body(ollama_msgs, model, None, stream=True)
+        body = self._build_body(ollama_msgs, model, effective_tools, stream=True)
         async with self._get_client().stream("POST", "/api/chat", json=body) as resp:
             resp.raise_for_status()
+            tc_accum: dict[int, dict[str, str]] = {}
             async for line in resp.aiter_lines():
                 if not line:
                     continue
                 data = json.loads(line)
-                chunk = data.get("message", {}).get("content", "")
+                msg = data.get("message", {})
+
+                # 文本 token
+                chunk = msg.get("content", "")
                 if chunk:
                     yield chunk
+
+                # tool_call deltas（Ollama 在最后一帧返回完整 tool_calls）
+                if tool_calls_out is not None:
+                    tool_calls_data = msg.get("tool_calls")
+                    if tool_calls_data:
+                        for i, tc in enumerate(tool_calls_data):
+                            fn = tc.get("function", {})
+                            tool_calls_out.append(ToolCall(
+                                id=tc.get("id", f"call_{i}"),
+                                name=fn.get("name", ""),
+                                arguments=json.loads(fn.get("arguments", "{}")),
+                            ))
 
     async def embed(self, texts: list[str], **kwargs: Any) -> list[list[float]]:
         model = kwargs.get("model", self._param.model)

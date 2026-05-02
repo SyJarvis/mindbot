@@ -21,12 +21,11 @@ import pytest
 from mindbot.agent.agent import Agent
 from mindbot.agent.core import MindAgent
 from mindbot.agent.multi_agent import MultiAgentOrchestrator
-from mindbot.agent.orchestrator import AgentOrchestrator
 from mindbot.capability.backends.tool_backend import ToolBackend
 from mindbot.capability.backends.tooling.models import tool
 from mindbot.capability.backends.tooling.registry import ToolRegistry
 from mindbot.capability.facade import CapabilityFacade
-from mindbot.config.schema import AgentConfig, Config, ContextConfig, ToolApprovalConfig
+from mindbot.config.schema import AgentConfig, Config, ContextConfig
 from mindbot.context.models import ChatResponse, FinishReason, Message, ToolCall
 
 
@@ -57,6 +56,8 @@ class FakeLLM:
         self,
         messages: list[Message],
         model: str | None = None,
+        tools: list[Any] | None = None,
+        tool_calls_out: list[Any] | None = None,
         **kwargs: Any,
     ) -> AsyncIterator[str]:
         self.stream_calls.append(messages)
@@ -95,10 +96,15 @@ class SequenceLLM(FakeLLM):
         self,
         messages: list[Message],
         model: str | None = None,
+        tools: list[Any] | None = None,
+        tool_calls_out: list[Any] | None = None,
         **kwargs: Any,
     ) -> AsyncIterator[str]:
         self.stream_calls.append(messages)
+        self.bound_tools.append(tools)
         response = self._responses.pop(0)
+        if tool_calls_out is not None and response.tool_calls:
+            tool_calls_out.extend(response.tool_calls)
         if response.content:
             yield response.content
 
@@ -325,38 +331,6 @@ class TestPerCallToolScope:
 
         assert first_tool_msgs[0].content == "turn"
         assert second_tool_msgs[0].content == "global"
-
-
-class TestLegacyOrchestratorToolScope:
-
-    @pytest.mark.asyncio
-    async def test_orchestrator_executes_bound_tools_without_global_facade(self) -> None:
-        llm = SequenceLLM(
-            [
-                ChatResponse(
-                    content="",
-                    tool_calls=[ToolCall(id="tc1", name="legacy_echo", arguments={})],
-                    finish_reason=FinishReason.TOOL_CALLS,
-                ),
-                ChatResponse(content="legacy done", finish_reason=FinishReason.STOP),
-            ]
-        )
-
-        @tool()
-        def legacy_echo() -> str:
-            """Return a legacy tool result."""
-            return "legacy"
-
-        orchestrator = AgentOrchestrator(
-            llm=llm,
-            tools=[legacy_echo],
-            approval_config=ToolApprovalConfig(whitelist={"legacy_echo": [".*"]}),
-        )
-        response = await orchestrator.chat([Message(role="user", content="run tool")])
-
-        tool_messages = [msg for msg in response.message_trace if msg.role == "tool"]
-        assert len(tool_messages) == 1
-        assert tool_messages[0].content == "legacy"
 
 
 # ---------------------------------------------------------------------------

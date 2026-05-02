@@ -125,9 +125,12 @@ class AgentEvent:
         return cls(type=EventType.TOOL_CALL_DENIED, timestamp=time.time(), data={"request_id": request_id, "reason": reason})
 
     @classmethod
-    def tool_executing(cls, tool_name: str, call_id: str) -> "AgentEvent":
+    def tool_executing(cls, tool_name: str, call_id: str, arguments: str | None = None) -> "AgentEvent":
         """Create a tool executing event."""
-        return cls(type=EventType.TOOL_EXECUTING, timestamp=time.time(), data={"tool_name": tool_name, "call_id": call_id})
+        data: dict[str, Any] = {"tool_name": tool_name, "call_id": call_id}
+        if arguments:
+            data["arguments"] = arguments
+        return cls(type=EventType.TOOL_EXECUTING, timestamp=time.time(), data=data)
 
     @classmethod
     def tool_result(cls, tool_name: str, call_id: str, result: str) -> "AgentEvent":

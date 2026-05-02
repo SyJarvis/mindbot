@@ -268,25 +268,64 @@ class OpenAIProvider(Provider):
         self,
         messages: list[Message],
         model: str | None = None,
+        tools: list[Any] | None = None,
+        tool_calls_out: list[Any] | None = None,
         **kwargs: Any,
     ) -> AsyncIterator[str]:
-        # When tools are bound (even empty list), fall back to non-streaming to capture tool calls.
-        if self._bound_tools is not None:
-            resp = await self.chat(messages, model=model, **kwargs)
-            if resp.content:
-                yield resp.content
-            return
+        """流式对话，同时支持工具调用。
+
+        通过 tool_calls_out 可变列表返回解析后的 tool_calls，
+        文本内容通过 yield 逐 token 返回。
+        """
+        # 兼容 bind_tools 模式：绑定工具但调用时未传 tools
+        effective_tools = tools if tools is not None else self._bound_tools
 
         api_messages = self._to_openai_messages(messages)
-        api_kwargs = self._build_api_kwargs(model, None, stream=True, **kwargs)
+        api_kwargs = self._build_api_kwargs(model, effective_tools, stream=True, **kwargs)
         stream = await self._client.chat.completions.create(
             messages=api_messages,  # type: ignore[arg-type]
             **api_kwargs,
         )
+
+        # 累积 tool_call deltas（按 index 分组）
+        tc_accum: dict[int, dict[str, str]] = {}
+
         async for chunk in stream:
-            delta = chunk.choices[0].delta if chunk.choices else None
-            if delta and delta.content:
+            if not chunk.choices:
+                continue
+            delta = chunk.choices[0].delta
+            if not delta:
+                continue
+
+            # 文本 token
+            if delta.content:
                 yield delta.content
+
+            # tool_call deltas
+            if delta.tool_calls and tool_calls_out is not None:
+                for tc in delta.tool_calls:
+                    idx = tc.index
+                    if idx not in tc_accum:
+                        tc_accum[idx] = {"id": "", "name": "", "arguments": ""}
+                    if tc.id:
+                        tc_accum[idx]["id"] = tc.id
+                    if tc.function:
+                        if tc.function.name:
+                            tc_accum[idx]["name"] = tc.function.name
+                        if tc.function.arguments:
+                            tc_accum[idx]["arguments"] += tc.function.arguments
+
+        # 流结束后，解析累积的 tool_calls
+        if tool_calls_out is not None and tc_accum:
+            for idx in sorted(tc_accum):
+                data = tc_accum[idx]
+                tool_calls_out.append(
+                    ToolCall(
+                        id=data["id"],
+                        name=data["name"],
+                        arguments=json.loads(data["arguments"]),
+                    )
+                )
 
     async def embed(self, texts: list[str], **kwargs: Any) -> list[list[float]]:
         model = kwargs.pop("model", self._param.model)

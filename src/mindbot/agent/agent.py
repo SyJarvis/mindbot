@@ -144,7 +144,6 @@ class Agent:
             str,
             tuple[bool, frozenset[tuple[str, int]]],
         ] = {}
-        self._capability_tool_cache: dict[str, Tool] = {}
         self._journal: "SessionJournal | None" = None
         self._journal_sessions: set[str] = set()
 
@@ -169,30 +168,25 @@ class Agent:
         """Return all registered tools."""
         if self._capability_facade is not None:
             visible: list[Tool] = []
-            live_ids: set[str] = set()
+            seen: set[str] = set()
             for cap in self._capability_facade.list_capabilities():
-                live_ids.add(cap.id)
-                cached = self._capability_tool_cache.get(cap.id)
-                if (
-                    cached is None
-                    or cached.name != cap.name
-                    or cached.description != cap.description
-                    or cached.parameters_schema_override != cap.parameters_schema
-                ):
-                    cached = _capability_to_llm_tool(cap)
-                    self._capability_tool_cache[cap.id] = cached
-                visible.append(cached)
-            stale_ids = [cap_id for cap_id in self._capability_tool_cache if cap_id not in live_ids]
-            for cap_id in stale_ids:
-                del self._capability_tool_cache[cap_id]
+                if cap.id in seen:
+                    continue
+                seen.add(cap.id)
+                # Prefer original Tool from registry (preserves handler).
+                # Dynamic tools (not in registry) fall back to capability conversion.
+                original = self.tool_registry.get(cap.name)
+                if original is not None:
+                    visible.append(original)
+                else:
+                    visible.append(_capability_to_llm_tool(cap))
             return visible
         return self.tool_registry.list_tools()
 
     def refresh_capabilities(self) -> None:
-        """Refresh capability-backed tools and invalidate cached orchestrators."""
+        """Refresh capability-backed tools and invalidate cached turn engines."""
         if self._capability_facade is not None:
             self._capability_facade.refresh_registry()
-        self._capability_tool_cache.clear()
         self._turn_engines.clear()
         self._turn_engine_tool_signatures.clear()
 
@@ -305,7 +299,7 @@ class Agent:
         )
 
     # ------------------------------------------------------------------
-    # Orchestrator cache (per session)
+    # Turn engine cache (per session)
     # ------------------------------------------------------------------
 
     def _get_turn_engine(
@@ -422,23 +416,32 @@ class Agent:
         session_id: str = "default",
         tools: list[Any] | None = None,
     ) -> AsyncIterator[str]:
-        """Streaming chat.
+        """流式对话，逐 token 输出。
 
-        Streams token-by-token when no tools are active.  When tools are active
-        the full turn runs first and the final content is yielded as a single
-        chunk (tool calls require a complete response to parse).
+        直接从 TurnEngine.run_stream() 逐 token yield，
+        流结束后自动持久化（无需 Queue / create_task）。
 
         Yields:
             String chunks of the assistant response.
         """
         turn_context = self._build_turn_context(tools)
-        response = await self._run_turn(
-            message=message,
+        input_builder = self._get_session_input_builder(session_id)
+        messages = input_builder.build(message, session_id=session_id)
+        user_timestamp = messages[-1].timestamp if messages and messages[-1].role == "user" else None
+        turn_engine = self._get_turn_engine(session_id, turn_context)
+
+        async for chunk in turn_engine.run_stream(messages):
+            yield chunk
+
+        # 流结束，做持久化
+        response = turn_engine.last_stream_response
+        writer = self._get_persistence_writer(session_id)
+        writer.commit_turn(
+            message,
+            response,
             session_id=session_id,
-            turn_context=turn_context,
+            user_timestamp=user_timestamp,
         )
-        if response.content:
-            yield response.content
 
     # ------------------------------------------------------------------
     # Repr
