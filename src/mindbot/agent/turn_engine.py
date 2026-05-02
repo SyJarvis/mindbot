@@ -203,6 +203,48 @@ class TurnEngine:
     # 非流式迭代
     # ------------------------------------------------------------------
 
+    # ------------------------------------------------------------------
+    # Text-based tool call detection
+    # ------------------------------------------------------------------
+
+    _TOOL_CALL_RE: Any = None  # compiled regex, lazy init
+
+    @classmethod
+    def _detect_text_tool_calls(cls, content: str) -> list[tuple[str, dict]]:
+        """Detect tool calls embedded in LLM text output.
+
+        Some models output tool calls as JSON text instead of using the
+        structured function calling API.  This method finds patterns like::
+
+            {"name": "tool_name", "arguments": {...}}
+
+        Returns a list of (tool_name, arguments_dict) tuples.
+        """
+        import json
+        import re
+
+        if cls._TOOL_CALL_RE is None:
+            cls._TOOL_CALL_RE = re.compile(r'\{\s*"name"\s*:')
+
+        results = []
+        for m in cls._TOOL_CALL_RE.finditer(content):
+            start = m.start()
+            # Try to parse valid JSON starting from this position
+            for end in range(len(content), start, -1):
+                candidate = content[start:end]
+                try:
+                    obj = json.loads(candidate)
+                    if isinstance(obj, dict) and "name" in obj and "arguments" in obj:
+                        results.append((obj["name"], obj["arguments"] if isinstance(obj["arguments"], dict) else {}))
+                        break
+                except (json.JSONDecodeError, ValueError):
+                    continue
+        return results
+
+    # ------------------------------------------------------------------
+    # Iteration
+    # ------------------------------------------------------------------
+
     async def _execute_iteration(
         self,
         messages: list[Message],
@@ -219,6 +261,32 @@ class TurnEngine:
         )
 
         tool_calls = llm_response.tool_calls
+
+        # Fallback: detect tool calls in text for models that don't support
+        # structured function calling (e.g. GLM, some Qwen variants).
+        if not tool_calls and llm_response.content:
+            text_calls = self._detect_text_tool_calls(llm_response.content)
+            if text_calls and self._tools:
+                # Check detected names against available tools
+                available = {t.name for t in self._tools}
+                from mindbot.context.models import ToolCall
+                detected = []
+                for name, args in text_calls:
+                    if name in available:
+                        detected.append(ToolCall(
+                            id=f"text_tc_{uuid.uuid4().hex[:8]}",
+                            name=name,
+                            arguments=args,
+                        ))
+                if detected:
+                    # Strip the tool call JSON blocks from displayed content
+                    import re
+                    clean = re.sub(r'\{\s*"name"\s*:\s*"[^"]*"\s*,\s*"arguments"\s*:\s*\{[\s\S]*?\}\s*\}', '', llm_response.content).strip()
+                    llm_response.content = clean
+                    tool_calls = detected
+                    logger.info("Detected %d text tool calls: %s",
+                                len(detected), [tc.name for tc in detected])
+
         if not tool_calls:
             response.content = llm_response.content or ""
             response.metadata["final_message_metadata"] = {
