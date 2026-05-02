@@ -335,6 +335,11 @@ class CronService:
             if not job.enabled:
                 continue
 
+            # Compute next run for jobs loaded without one (e.g. from disk)
+            if job.state.next_run_at_ms is None:
+                job.state.next_run_at_ms = _compute_next_run(job.schedule, now_ms)
+                self._save_store()
+
             if job.state.next_run_at_ms and job.state.next_run_at_ms <= now_ms:
                 logger.info(f"Running cron job: {job.name}")
                 await self.run_job(job.id)

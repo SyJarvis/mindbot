@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import typer
 from rich.console import Console
 
@@ -13,7 +15,6 @@ def serve(
     host: str = typer.Option("0.0.0.0", "--host", "-h", help="Host to bind to"),
 ) -> None:
     """启动 MindBot 服务器及所有已启用的 channel。"""
-    import asyncio
 
     config_file = find_config_file()
     if not config_file:
@@ -23,6 +24,7 @@ def serve(
     async def main():
         from mindbot import MessageBus, ChannelManager
         from mindbot.bot import MindBot
+        from mindbot.bus.events import OutboundMessage
         from mindbot.config.loader import load_config
         from mindbot.config.store import ConfigStore
 
@@ -32,6 +34,23 @@ def serve(
         bus = MessageBus()
         channel_manager = ChannelManager(config, bus)
         bot = MindBot(config_store=store)
+
+        # Wire cron delivery: agent response → bus → channel
+        async def _deliver(channel: str, to: str, content: str) -> None:
+            await bus.publish_outbound(OutboundMessage(
+                channel=channel,
+                chat_id=to,
+                content=content,
+            ))
+
+        bot.set_delivery_callback(_deliver)
+
+        # Set channel context on bot before each inbound message,
+        # so tools (e.g. cron_add) can auto-fill delivery info.
+        channel_manager.set_inbound_context_callback(
+            lambda msg: setattr(bot, "_channel_ctx", {"channel": msg.channel, "to": msg.chat_id}),
+        )
+
         channel_manager.set_chat_handler(
             lambda message, session_id: bot.chat(message, session_id=session_id),
         )
@@ -44,12 +63,14 @@ def serve(
 
         console.print(f"[bold green]Starting MindBot server on {host}:{port}[/bold green]")
 
+        await bot.cron.start()
         channel_task = asyncio.create_task(channel_manager.start_all())
 
         try:
             await channel_task
         except KeyboardInterrupt:
             console.print("\n[yellow]Shutting down...[/yellow]")
+            await bot.cron.stop()
             await channel_manager.stop_all()
 
     asyncio.run(main())

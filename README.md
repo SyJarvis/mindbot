@@ -18,6 +18,7 @@
 
 ## 📢 News
 
+- **2026-05-02** ⏰ **定时任务（Cron）** — 对话创建定时任务，支持一次性/循环/cron 表达式，多渠道投递
 - **2026-04-28** 🔄 **Hailo NPU + 动态健康监控** — Hailo-10H 硬件直连推理、Provider 后台探测静默恢复
 - **2026-04-23** 🔐 **权限审批系统** — 工具执行通用审批机制，白名单/按需确认
 - **2026-04-22** ⚙️ **向量记忆配置** — Memory 向量检索与遗忘策略可配置
@@ -49,6 +50,7 @@
 - 🔒 **工具确认** — 多级安全确认机制（白名单、危险工具检测）
 - 🛡️ **路径安全** — 文件工具路径策略 + Shell 执行边界控制
 - 💬 **多通道** — CLI、HTTP、飞书、Telegram
+- ⏰ **定时任务** — 对话创建定时任务，支持 at/every/cron 三种调度，多渠道投递
 - 🔌 **Skills 机制** — `SKILL.md` 技能包按需注入 prompt
 - ⚙️ **实时配置** — ConfigBus 热更新，授权实时生效
 
@@ -320,6 +322,34 @@ export TELEGRAM_BOT_TOKEN=your-token
 
 ---
 
+## 定时任务（Cron）
+
+通过自然语言对话即可创建和管理定时任务，支持三种调度类型：
+
+| 类型 | 格式 | 示例 |
+|------|------|------|
+| `at` | ISO 8601 时间 | `2025-06-01T09:00:00` — 一次性执行 |
+| `every` | 时长字符串 | `5m`、`1h`、`2h30m` — 固定间隔循环 |
+| `cron` | 标准 cron 表达式 | `0 9 * * *` — 每天 9:00 |
+
+### 使用示例
+
+```
+用户: 帮我创建一个每天早上9点的定时任务，提醒我站起来活动
+用户: 5分钟后提醒我开会
+用户: 每30分钟检查一次服务状态
+用户: 列出我的所有定时任务
+用户: 删掉"开会提醒"这个任务
+```
+
+定时任务触发后，agent 会自动处理消息。如果需要将结果推送到飞书或 HTTP 等渠道，创建时指定 `deliver=true` + `channel` 即可。
+
+任务数据持久化在 `~/.mindbot/cron/jobs.json`，重启后自动恢复。
+
+> 详细实现文档：[docs/develop/cron-tool-impl.md](docs/develop/cron-tool-impl.md)
+
+---
+
 ## 文档导航
 
 | 主题 | 链接 |
@@ -330,6 +360,7 @@ export TELEGRAM_BOT_TOKEN=your-token
 | 示例代码 | [docs/guide/examples.md](docs/guide/examples.md) |
 | CLI 命令 | [docs/guide/cli-reference.md](docs/guide/cli-reference.md) |
 | Skills 机制 | [docs/guide/skills.md](docs/guide/skills.md) |
+| 定时任务实现 | [docs/develop/cron-tool-impl.md](docs/develop/cron-tool-impl.md) |
 | Benchmark | [docs/testing/toolcall15.md](docs/testing/toolcall15.md) |
 
 ---
@@ -347,6 +378,7 @@ mindbot/
 │   ├── capability/       # 能力层
 │   ├── channels/         # 多通道支持
 │   ├── config/           # 配置管理
+│   ├── cron/             # 定时任务服务
 │   └── tools/            # 内置工具
 ├── docs/                 # 文档
 ├── tests/                # 测试
@@ -413,6 +445,12 @@ MindBot 采用 **五层分层架构**，各层之间通过明确的边界规则�
 | `exec_command` | Shell | 执行 Shell 命令，带超时和安全检查 |
 | `get_mindbot_runtime_info` | 系统 | 获取运行时状态（配置、内存、日志） |
 | `fetch_url` | Web | 获取 URL 内容，自动去除 HTML 标签 |
+| `cron_add` | 定时任务 | 创建定时任务（at/every/cron 三种调度） |
+| `cron_list` | 定时任务 | 列出所有定时任务 |
+| `cron_remove` | 定时任务 | 删除定时任务 |
+| `cron_toggle` | 定时任务 | 启用/禁用定时任务 |
+| `cron_run` | 定时任务 | 手动触发定时任务 |
+| `cron_status` | 定时任务 | 查询 Cron 服务状态 |
 
 ### 路径安全策略
 

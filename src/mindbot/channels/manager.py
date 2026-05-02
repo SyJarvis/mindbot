@@ -30,6 +30,7 @@ class ChannelManager:
         self._dispatch_task: asyncio.Task | None = None
         self._inbound_task: asyncio.Task | None = None
         self._chat_handler: Callable[[str, str], Awaitable[Any]] | None = None
+        self._inbound_ctx_fn: Callable[[InboundMessage], None] | None = None
 
         self._init_channels()
 
@@ -190,6 +191,13 @@ class ChannelManager:
                     logger.warning(f"Dropping inbound message from {msg.channel}: no chat handler configured")
                     continue
 
+                # Set channel context for tools (e.g. cron_add auto-delivery)
+                if self._inbound_ctx_fn:
+                    try:
+                        self._inbound_ctx_fn(msg)
+                    except Exception:
+                        pass
+
                 # Check ACP routing
                 acp_channel = self.channels.get("acp")
                 if acp_channel and self._should_route_acp(msg):
@@ -263,6 +271,16 @@ class ChannelManager:
     ) -> None:
         """Set the shared chat handler used for inbound bus messages."""
         self._chat_handler = handler
+
+    def set_inbound_context_callback(
+        self,
+        fn: Callable[[InboundMessage], None],
+    ) -> None:
+        """Set a callback invoked with each InboundMessage before routing.
+
+        Used to capture channel context for tools (e.g. cron delivery).
+        """
+        self._inbound_ctx_fn = fn
 
     def get_channel(self, name: str) -> BaseChannel | None:
         """Get a channel by name."""

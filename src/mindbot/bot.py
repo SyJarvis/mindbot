@@ -60,7 +60,7 @@ class MindBot:
 
         # Initialize Cron service
         cron_path = Path.home() / ".mindbot" / "cron" / "jobs.json"
-        self.cron: CronService = CronService(cron_path)
+        self.cron: CronService = CronService(cron_path, on_job=self._on_cron_job)
 
         # Initialize HealthMonitor if routing is enabled
         self._health_monitor: "HealthMonitor | None" = None
@@ -84,8 +84,21 @@ class MindBot:
                     probe_config,
                 )
 
+        # Register cron tools with the agent
+        self._register_cron_tools()
+
         # State
         self._running = False
+        self._deliver_fn: Any | None = None  # async (channel, to, content) -> None
+        self._channel_ctx: dict[str, str] = {}  # {"channel": "feishu", "to": "ou_xxx"}
+
+    def set_delivery_callback(self, fn: Any) -> None:
+        """Set a callback for delivering cron results to channels.
+
+        Args:
+            fn: async function(channel: str, to: str, content: str) -> None
+        """
+        self._deliver_fn = fn
 
     @property
     def store(self) -> ConfigStore | None:
@@ -359,6 +372,42 @@ class MindBot:
     def register_tool(self, tool: Any) -> None:
         """Register tool."""
         self._agent.register_tool(tool)
+
+    # ==================================================================
+    # Cron
+    # ==================================================================
+
+    async def _on_cron_job(self, job: object) -> str | None:
+        """Handle a fired cron job by sending its message to the agent."""
+        try:
+            response = await self._agent.chat(
+                job.payload.message,
+                session_id=f"cron-{job.id}",
+            )
+            # Deliver to channel if configured
+            if job.payload.deliver and self._deliver_fn and response.content:
+                try:
+                    await self._deliver_fn(
+                        channel=job.payload.channel or "feishu",
+                        to=job.payload.to or "",
+                        content=response.content,
+                    )
+                except Exception as exc:
+                    import logging
+                    logging.getLogger("mindbot.cron").error("Cron deliver %s failed: %s", job.id, exc)
+            return response.content
+        except Exception as exc:
+            import logging
+
+            logging.getLogger("mindbot.cron").error("Cron job %s failed: %s", job.id, exc)
+            return None
+
+    def _register_cron_tools(self) -> None:
+        """Create and register cron management tools on the agent."""
+        from mindbot.tools.cron_ops import create_cron_tools
+
+        for tool in create_cron_tools(self.cron, channel_ctx_fn=lambda: self._channel_ctx):
+            self._agent.register_tool(tool)
 
     # ==================================================================
     # Introspection
