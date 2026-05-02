@@ -485,7 +485,16 @@ class FeishuChannel(BaseChannel):
     async def _send_content_message(self, receive_id_type: str, msg: OutboundMessage) -> None:
         """Send the textual part of an outbound message as a Feishu card."""
         if not msg.content or not msg.content.strip():
-            return
+            # Fallback: always send something so the user isn't left waiting
+            card = {
+                "config": {"wide_screen_mode": True},
+                "elements": [{"tag": "markdown", "content": "（处理完成，无文本内容）"}],
+            }
+        else:
+            card = {
+                "config": {"wide_screen_mode": True},
+                "elements": self._build_card_elements(msg.content),
+            }
 
         card = {
             "config": {"wide_screen_mode": True},

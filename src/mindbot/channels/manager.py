@@ -226,6 +226,12 @@ class ChannelManager:
                         chat_id=msg.chat_id,
                         response=response,
                     )
+                    if not reply.content:
+                        logger.warning(
+                            "Empty response for %s:%s session=%s stop=%s",
+                            msg.channel, msg.chat_id, session_id,
+                            getattr(response, "stop_reason", "?"),
+                        )
                 except Exception as e:
                     logger.error(f"Error handling inbound message from {msg.channel}: {e}")
                     reply = OutboundMessage(
