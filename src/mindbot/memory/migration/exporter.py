@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
-from typing import Any
 
 from mindbot.memory.migration.package import (
     ChunkData,
@@ -190,17 +189,3 @@ class MemoryExporter:
         saved_path = package.save_to_file(file_path)
         return str(saved_path)
 
-    def export_summary(self, agent_id: str | None = None) -> dict[str, Any]:
-        """Export summary (metadata only, no full content)."""
-        opts = ExportOptions(include_vectors=False, include_metadata=False, max_shards=50)
-        package = self.export(agent_id, opts)
-
-        # Return summary without full texts
-        return {
-            "profile": package.profile.agent_name if package.profile else None,
-            "clusters": len(package.clusters),
-            "chunks": len(package.chunks),
-            "shards": len(package.shards),
-            "exported_at": package.exported_at,
-            "checksum": package.checksum,
-        }

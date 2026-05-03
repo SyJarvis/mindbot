@@ -200,27 +200,3 @@ class LegacyMigrator:
 
         return report
 
-    def estimate_source_count(self, sqlite_path: str) -> dict[str, int]:
-        """Count records in source SQLite database."""
-        sqlite_path = Path(sqlite_path).expanduser()
-        if not sqlite_path.exists():
-            return {"total": 0}
-
-        conn = sqlite3.connect(str(sqlite_path))
-        try:
-            total = conn.execute("SELECT COUNT(*) FROM memory_chunks").fetchone()[0]
-            short_term = conn.execute(
-                "SELECT COUNT(*) FROM memory_chunks WHERE source = 'short_term'"
-            ).fetchone()[0]
-            long_term = conn.execute(
-                "SELECT COUNT(*) FROM memory_chunks WHERE source = 'long_term'"
-            ).fetchone()[0]
-            conn.close()
-            return {
-                "total": total,
-                "short_term": short_term,
-                "long_term": long_term,
-            }
-        except Exception:
-            conn.close()
-            return {"total": 0}
