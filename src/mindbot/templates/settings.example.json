@@ -115,7 +115,13 @@
     "always_include": [],
     "max_visible": 8,
     "max_detail_load": 2,
-    "trigger_mode": "metadata-match"
+    "trigger_mode": "metadata-match",
+    "scripts": {
+      "enabled": true,
+      "allowlist": [],
+      "max_timeout": 60,
+      "allowed_languages": ["python", "bash", "sh"]
+    }
   },
   "context": {
     "compression": "truncate"

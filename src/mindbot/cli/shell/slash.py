@@ -18,6 +18,8 @@ async def handle_slash_command(cmd: str, bot: Any, shell_ctx: Any = None) -> Non
     支持的命令：
         /model                交互式切换模型
         /model <instance/model>   切换到不同模型
+        /skill                列出可用的 skills
+        /skill <name>         显示 skill 详情或触发 skill
         /help (h, ?)          显示帮助
         /status               显示 bot 状态
         /config               实时配置命令
@@ -30,6 +32,8 @@ async def handle_slash_command(cmd: str, bot: Any, shell_ctx: Any = None) -> Non
     if command in ("/model", "/m"):
         arg = " ".join(args)
         await cmd_model(bot, arg)
+    elif command == "/skill":
+        await cmd_skill(bot, args)
     elif command in ("/help", "/h", "/?"):
         cmd_help()
     elif command == "/status":
@@ -119,6 +123,7 @@ _KEYBOARD_SHORTCUTS = [
 
 _SLASH_COMMANDS = [
     ("/model", "List or switch models (interactive)"),
+    ("/skill", "List or invoke skills"),
     ("/help", "Show this help"),
     ("/status", "Show bot status"),
     ("/config", "Real-time config commands"),
@@ -251,3 +256,177 @@ def cmd_theme(args: list[str]) -> None:
 
     set_active_theme(name)
     console.print(f"[green]\u2713 Switched to {name} theme[/green]")
+
+
+# ---------------------------------------------------------------------------
+# /skill — Skill 管理与触发
+# ---------------------------------------------------------------------------
+
+async def cmd_skill(bot: Any, args: list[str]) -> None:
+    """处理 /skill 命令。
+
+    用法：
+        /skill              列出所有可用 skills
+        /skill list         列出所有可用 skills
+        /skill <name>       显示 skill 详情
+        /skill <name> <query>  触发 skill 并发送查询
+    """
+    # 获取 skill registry
+    # 路径: MindBot._agent._main_agent._skill_registry
+    skill_registry = None
+
+    # 尝试从 bot._agent 获取
+    agent = getattr(bot, "_agent", None)
+    if agent is not None:
+        main_agent = getattr(agent, "_main_agent", None)
+        if main_agent is not None:
+            skill_registry = getattr(main_agent, "_skill_registry", None)
+
+    if skill_registry is None:
+        console.print("[yellow]Skill registry not available.[/yellow]")
+        console.print("[dim]Make sure skills are enabled in settings.json[/dim]")
+        return
+
+    # 获取所有 skills
+    all_skills = skill_registry.list_all()
+    if not all_skills:
+        console.print("[dim]No skills loaded.[/dim]")
+        return
+
+    # 无参数或 list：显示列表
+    if not args or args[0].lower() == "list":
+        _render_skill_list(all_skills)
+        return
+
+    # 查找指定 skill
+    skill_name = args[0].lower()
+    skill = skill_registry.get(skill_name)
+
+    if skill is None:
+        # 尝试模糊匹配
+        matches = [s for s in all_skills if skill_name in s.name.lower()]
+        if len(matches) == 1:
+            skill = matches[0]
+        elif len(matches) > 1:
+            console.print("[yellow]Ambiguous skill name. Did you mean:[/yellow]")
+            for s in matches:
+                console.print(f"  - {s.name}")
+            return
+        else:
+            console.print(f"[red]Skill not found: {args[0]}[/red]")
+            _render_skill_list(all_skills)
+            return
+
+    # 有额外参数：触发 skill
+    if len(args) > 1:
+        query = " ".join(args[1:])
+        await _invoke_skill(bot, skill, query)
+        return
+
+    # 显示 skill 详情
+    _render_skill_detail(skill)
+
+
+def _render_skill_list(skills: list[Any]) -> None:
+    """渲染 skill 列表。"""
+    table = Table(title="Available Skills", show_header=True, header_style="bold cyan")
+    table.add_column("Name", style="green", width=25)
+    table.add_column("Scope", style="yellow", width=10)
+    table.add_column("Description", style="dim")
+
+    for skill in sorted(skills, key=lambda s: s.name):
+        desc = skill.description or "(no description)"
+        if len(desc) > 60:
+            desc = desc[:57] + "..."
+        scope = getattr(skill, "scope", "user")
+        table.add_row(skill.name, scope, desc)
+
+    console.print(table)
+    console.print()
+    console.print("[dim]Usage: /skill <name> to view details, /skill <name> <query> to invoke[/dim]")
+
+
+def _render_skill_detail(skill: Any) -> None:
+    """渲染单个 skill 的详情。"""
+    # 基本信息
+    info_table = Table(show_header=False, box=None, padding=(0, 2))
+    info_table.add_column(style="bold cyan", width=12)
+    info_table.add_column()
+
+    info_table.add_row("Name:", skill.name)
+    info_table.add_row("Scope:", getattr(skill, "scope", "user"))
+    info_table.add_row("Description:", skill.description or "(none)")
+    info_table.add_row("When to use:", getattr(skill, "when_to_use", "") or "(not specified)")
+
+    # Scripts
+    scripts = getattr(skill, "scripts", [])
+    if scripts:
+        script_names = ", ".join(s.name for s in scripts)
+        info_table.add_row("Scripts:", script_names)
+
+    # Allowed tools
+    if skill.allowed_tools:
+        info_table.add_row("Tools:", ", ".join(skill.allowed_tools))
+
+    # Source
+    if hasattr(skill, "skill_dir"):
+        info_table.add_row("Location:", str(skill.skill_dir))
+
+    console.print(
+        Panel(info_table, title=f"Skill: {skill.name}", border_style="green", padding=(1, 2))
+    )
+
+    # 显示 body 预览
+    if hasattr(skill, "body") and skill.body:
+        body_preview = skill.body[:500]
+        if len(skill.body) > 500:
+            body_preview += "\n..."
+        console.print()
+        console.print("[bold]Instructions:[/bold]")
+        console.print(f"[dim]{body_preview}[/dim]")
+
+    console.print()
+    console.print(f"[dim]Usage: /skill {skill.name} <your query>[/dim]")
+
+
+async def _invoke_skill(bot: Any, skill: Any, query: str) -> None:
+    """触发 skill 并发送查询。"""
+    # 构建包含 skill 指令的消息
+    body = getattr(skill, "body", "")
+    if not body:
+        console.print(f"[yellow]Skill '{skill.name}' has no instructions.[/yellow]")
+        return
+
+    # 构建完整的消息内容
+    message = f"""[Skill: {skill.name}]
+
+{body}
+
+---
+
+User request: {query}"""
+
+    console.print(f"[green]Invoking skill: {skill.name}[/green]")
+    console.print(f"[dim]Query: {query}[/dim]")
+    console.print()
+
+    # 发送给 bot 处理
+    try:
+        # 使用 bot 的 chat 方法处理
+        if hasattr(bot, "chat"):
+            response = await bot.chat(message)
+            # 提取内容部分
+            if response is not None:
+                content = getattr(response, "content", None)
+                if content:
+                    console.print(content)
+                else:
+                    # 如果没有 content 属性，尝试直接打印
+                    console.print(str(response))
+        elif hasattr(bot, "_handle_message"):
+            await bot._handle_message(message)
+        else:
+            console.print("[yellow]Bot does not support direct message handling.[/yellow]")
+            console.print("[dim]The skill instructions have been loaded.[/dim]")
+    except Exception as e:
+        console.print(f"[red]Error invoking skill: {e}[/red]")
