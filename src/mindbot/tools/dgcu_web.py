@@ -10,9 +10,8 @@ from datetime import datetime
 from html.parser import HTMLParser
 
 from mindbot.capability.backends.tooling.models import Tool
-from mindbot.utils import get_logger
+from mindbot.logging import logger
 
-logger = get_logger("tools.dgcu_web")
 
 DGCU_BASE_URL = "https://www.dgcu.edu.cn"
 

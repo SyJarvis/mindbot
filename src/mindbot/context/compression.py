@@ -11,13 +11,13 @@ from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any
 
 from mindbot.context.models import Message
-from mindbot.utils import estimate_tokens, get_logger, run_sync
+from mindbot.utils import estimate_tokens, run_sync
+from mindbot.logging import logger
 
 if TYPE_CHECKING:
     from mindbot.memory.manager import MemoryManager
     from mindbot.providers.adapter import ProviderAdapter
 
-logger = get_logger("context.compression")
 
 
 # ===================================================================

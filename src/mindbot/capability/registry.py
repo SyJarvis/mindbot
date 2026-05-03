@@ -17,9 +17,8 @@ from mindbot.capability.models import (
     CapabilityNotFoundError,
     CapabilityQuery,
 )
-from mindbot.utils import get_logger
+from mindbot.logging import logger
 
-logger = get_logger("capability.registry")
 
 
 class CapabilityRegistry:

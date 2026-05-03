@@ -9,7 +9,7 @@ from collections import OrderedDict
 from pathlib import Path
 from typing import Any
 
-from loguru import logger
+from mindbot.logging import logger
 
 from mindbot.bus.events import OutboundMessage
 from mindbot.bus.queue import MessageBus

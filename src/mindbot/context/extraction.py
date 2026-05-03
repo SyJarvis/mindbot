@@ -5,12 +5,12 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from mindbot.context.models import Message
-from mindbot.utils import get_logger, run_sync
+from mindbot.utils import run_sync
+from mindbot.logging import logger
 
 if TYPE_CHECKING:
     from mindbot.providers.adapter import ProviderAdapter
 
-logger = get_logger("context.extraction")
 
 _EXTRACT_PROMPT = """\
 Extract key information from the following conversation as a concise JSON object:

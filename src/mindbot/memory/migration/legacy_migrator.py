@@ -20,9 +20,8 @@ from mindbot.memory.types import (
     ShardSource,
     ShardType,
 )
-from mindbot.utils import get_logger
+from mindbot.logging import logger
 
-logger = get_logger("migration.legacy")
 
 
 class LegacyMigrator:

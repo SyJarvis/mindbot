@@ -22,7 +22,8 @@ from typing import TYPE_CHECKING, Literal
 
 from mindbot.context.manager import ContextManager
 from mindbot.context.models import Message
-from mindbot.utils import estimate_tokens, get_logger
+from mindbot.utils import estimate_tokens
+from mindbot.logging import logger
 
 ToolPersistence = Literal["none", "summary", "full"]
 
@@ -32,7 +33,6 @@ if TYPE_CHECKING:
     from mindbot.session.store import SessionJournal
     from mindbot.session.types import SessionMessage
 
-logger = get_logger("agent.persistence_writer")
 
 
 class PersistenceWriter:

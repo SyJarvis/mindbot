@@ -8,11 +8,10 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-import logging
 from pathlib import Path
 from typing import Callable, Awaitable
+from mindbot.logging import logger
 
-logger = logging.getLogger("mindbot.config.watcher")
 
 
 async def start_watcher(
@@ -53,7 +52,7 @@ async def _watch_with_watchfiles(
         # Check if our target file changed
         for change_type, changed_path in changes:
             if Path(changed_path).name == watch_file:
-                logger.debug("Config file changed: %s", changed_path)
+                logger.debug("Config file changed: {}", changed_path)
                 # Debounce: small delay to let writes complete
                 await asyncio.sleep(debounce_ms / 1000)
                 await on_change()
@@ -78,7 +77,7 @@ async def _watch_with_polling(
                 last_hash = current_hash
                 await on_change()
         except FileNotFoundError:
-            logger.warning("Config file disappeared: %s", path)
+            logger.warning("Config file disappeared: {}", path)
         except Exception:
             logger.exception("Error polling config file")
 

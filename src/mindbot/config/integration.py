@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 from pathlib import Path
 from typing import Any
 
@@ -10,8 +9,8 @@ from mindbot.config.bus import ConfigBus
 from mindbot.config.persistence import ConfigPersistence
 from mindbot.config.sync import ConfigSync
 from mindbot.auth.manager import AuthManager
+from mindbot.logging import logger
 
-logger = logging.getLogger(__name__)
 
 
 class AgentConfigIntegration:

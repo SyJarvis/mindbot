@@ -16,6 +16,7 @@ from mindbot.config.loader import load_config
 from mindbot.config.store import ConfigStore
 from mindbot.agent.core import MindAgent
 from mindbot.cron.service import CronService
+from mindbot.logging import logger, setup_logging
 
 
 class MindBot:
@@ -52,6 +53,8 @@ class MindBot:
         else:
             self.config = self._load_default_config()
             self._store = None
+
+        setup_logging(self.config.logging)
 
         self._inject_system_prompt()
 
@@ -135,9 +138,6 @@ class MindBot:
 
         This is the **sole** source of the system prompt at runtime.
         """
-        import logging
-
-        logger = logging.getLogger("mindbot.bot")
         system_file = Path.home() / ".mindbot" / "SYSTEM.md"
 
         if not system_file.exists():
@@ -393,13 +393,10 @@ class MindBot:
                         content=response.content,
                     )
                 except Exception as exc:
-                    import logging
-                    logging.getLogger("mindbot.cron").error("Cron deliver %s failed: %s", job.id, exc)
+                    logger.error("Cron deliver {} failed: {}", job.id, exc)
             return response.content
         except Exception as exc:
-            import logging
-
-            logging.getLogger("mindbot.cron").error("Cron job %s failed: %s", job.id, exc)
+            logger.error("Cron job {} failed: {}", job.id, exc)
             return None
 
     def _register_cron_tools(self) -> None:

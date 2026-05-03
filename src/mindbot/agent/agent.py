@@ -26,8 +26,8 @@ from mindbot.capability.backends.tooling import ToolRegistry
 from mindbot.capability.backends.tooling.models import Tool
 from mindbot.config.schema import ContextConfig
 from mindbot.context import ContextManager
+from mindbot.logging import logger, set_log_context
 from mindbot.providers.adapter import ProviderAdapter
-from mindbot.utils import get_logger
 
 if TYPE_CHECKING:
     from mindbot.capability.backends.tool_backend import ToolBackend
@@ -38,8 +38,6 @@ if TYPE_CHECKING:
     from mindbot.memory.manager import MemoryManager
     from mindbot.session.store import SessionJournal
     from mindbot.skills.registry import SkillRegistry
-
-logger = get_logger("agent")
 
 
 def _capability_to_llm_tool(capability: Any) -> Tool:
@@ -160,7 +158,7 @@ class Agent:
         if self._capability_facade is not None:
             self.refresh_capabilities()
         logger.debug(
-            "Registered tool: %s",
+            "Registered tool: {}",
             normalized.name if hasattr(normalized, "name") else type(normalized).__name__,
         )
 
@@ -235,7 +233,7 @@ class Agent:
             self._sessions.pop(evicted)
             self._turn_engines.pop(evicted, None)
             self._turn_engine_tool_signatures.pop(evicted, None)
-            logger.debug("Evicted session from LRU cache: %s", evicted)
+            logger.debug("agent.session.evict agent={} evicted={}", self.name, evicted)
 
         return ctx
 
@@ -324,7 +322,7 @@ class Agent:
             self._turn_engines[session_id] = turn_engine
             self._turn_engines.move_to_end(session_id)
             self._turn_engine_tool_signatures[session_id] = tool_signature
-            logger.debug("Built turn engine for agent=%s session=%s", self.name, session_id)
+            logger.debug("agent.turn_engine.build agent={} session={} tools={}", self.name, session_id, len(turn_context.tools))
         else:
             self._turn_engines.move_to_end(session_id)
 
@@ -352,14 +350,26 @@ class Agent:
         on_event: Callable[[AgentEvent], None] | None = None,
     ) -> AgentResponse:
         """Run one turn through the shared execution path."""
+        set_log_context(session_id=session_id)
+        logger.debug(
+            "_run_turn.start agent={} session={} tools={} msg_len={}",
+            self.name, session_id, len(turn_context.tools), len(message),
+        )
+
         input_builder = self._get_session_input_builder(session_id)
         messages = input_builder.build(message, session_id=session_id)
         user_timestamp = messages[-1].timestamp if messages and messages[-1].role == "user" else None
+        logger.debug("_run_turn.context_built session={} messages={}", session_id, len(messages))
+
         turn_engine = self._get_turn_engine(session_id, turn_context)
-        response = await turn_engine.run(
-            messages=messages,
-            on_event=on_event,
-        )
+        try:
+            response = await turn_engine.run(
+                messages=messages,
+                on_event=on_event,
+            )
+        except Exception:
+            logger.exception("_run_turn.error agent={} session={}", self.name, session_id)
+            raise
 
         writer = self._get_persistence_writer(session_id)
         writer.commit_turn(
@@ -368,6 +378,7 @@ class Agent:
             session_id=session_id,
             user_timestamp=user_timestamp,
         )
+        logger.debug("_run_turn.persisted session={} stop_reason={}", session_id, response.stop_reason)
         return response
 
     # ------------------------------------------------------------------
@@ -403,10 +414,11 @@ class Agent:
         )
 
         logger.info(
-            "chat: agent=%s session=%s stop_reason=%s",
+            "chat.finish agent={} session={} stop_reason={} content_len={}",
             self.name,
             session_id,
             response.stop_reason,
+            len(response.content),
         )
         return response
 
@@ -424,11 +436,17 @@ class Agent:
         Yields:
             String chunks of the assistant response.
         """
+        set_log_context(session_id=session_id)
         turn_context = self._build_turn_context(tools)
         input_builder = self._get_session_input_builder(session_id)
         messages = input_builder.build(message, session_id=session_id)
         user_timestamp = messages[-1].timestamp if messages and messages[-1].role == "user" else None
         turn_engine = self._get_turn_engine(session_id, turn_context)
+
+        logger.debug(
+            "chat_stream.start agent={} session={} tools={} msg_len={}",
+            self.name, session_id, len(turn_context.tools), len(message),
+        )
 
         async for chunk in turn_engine.run_stream(messages):
             yield chunk
@@ -441,6 +459,10 @@ class Agent:
             response,
             session_id=session_id,
             user_timestamp=user_timestamp,
+        )
+        logger.info(
+            "chat_stream.finish agent={} session={} stop_reason={}",
+            self.name, session_id, response.stop_reason,
         )
 
     # ------------------------------------------------------------------

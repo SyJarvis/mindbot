@@ -7,9 +7,8 @@ import time
 from pathlib import Path
 from typing import Any
 
-from mindbot.utils import get_logger
+from mindbot.logging import logger
 
-logger = get_logger("memory.content_store")
 
 
 class MarkdownContentStore:

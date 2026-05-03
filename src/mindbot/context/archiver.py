@@ -6,12 +6,11 @@ import uuid
 from typing import TYPE_CHECKING
 
 from mindbot.context.models import Message
-from mindbot.utils import get_logger
+from mindbot.logging import logger
 
 if TYPE_CHECKING:
     from mindbot.memory.manager import MemoryManager
 
-logger = get_logger("context.archiver")
 
 
 class MemoryArchiver:
@@ -36,7 +35,7 @@ class MemoryArchiver:
             content=f"[Archived {archive_id}]\n{content}",
             metadata={"type": "archive", "message_count": len(messages)},
         )
-        logger.info("Archived %d messages (id=%s)", len(messages), archive_id)
+        logger.info("Archived {} messages (id={})", len(messages), archive_id)
         ref_msg = Message(
             role="system",
             content=(

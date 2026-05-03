@@ -20,12 +20,11 @@ from mindbot.capability.backends.tooling import ToolRegistry
 from mindbot.config.schema import Config
 from mindbot.memory import MemoryManager
 from mindbot.session import SessionJournal
-from mindbot.utils import get_logger
+from mindbot.logging import logger
 
 if TYPE_CHECKING:
     from mindbot.capability.facade import CapabilityFacade
 
-logger = get_logger("agent.core")
 
 
 class MindAgent:
@@ -65,7 +64,7 @@ class MindAgent:
         self._journal: SessionJournal | None = None
         if config.session_journal.enabled:
             self._journal = SessionJournal(config.session_journal.path)
-            logger.info("Session journal enabled at %s", config.session_journal.path)
+            logger.info("Session journal enabled at {}", config.session_journal.path)
         self._main_agent.set_session_journal(self._journal)
 
     # ------------------------------------------------------------------
@@ -80,7 +79,7 @@ class MindAgent:
         """Construct the main Agent from configuration via the builder layer."""
         llm = create_llm(config)
         mode = "routing" if config.routing.auto else "single-provider"
-        logger.info("MindAgent: main agent uses %s mode", mode)
+        logger.info("MindAgent: main agent uses {} mode", mode)
 
         return create_agent(
             config,
@@ -115,7 +114,7 @@ class MindAgent:
     def register_child_agent(self, agent: Agent) -> None:
         """Register *agent* as a child agent under its name."""
         self._child_agents[agent.name] = agent
-        logger.info("Registered child agent: %s", agent.name)
+        logger.info("Registered child agent: {}", agent.name)
 
     def get_child_agent(self, name: str) -> Agent | None:
         """Return the child agent registered under *name*, or None."""

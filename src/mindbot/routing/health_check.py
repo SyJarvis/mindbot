@@ -9,9 +9,8 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from mindbot.config.schema import Config
 
-from mindbot.utils import get_logger
+from mindbot.logging import logger
 
-logger = get_logger("routing.health_check")
 
 
 class HealthCheckRegistry:
@@ -51,7 +50,7 @@ class HealthCheckRegistry:
         """
         checker = self._checkers.get(provider_type)
         if not checker:
-            logger.warning("No health checker for provider type: %s", provider_type)
+            logger.warning("No health checker for provider type: {}", provider_type)
             return True, 0.0  # Assume healthy if no checker
 
         start_time = time.time()
@@ -61,7 +60,7 @@ class HealthCheckRegistry:
             return result, latency_ms
         except Exception as e:
             latency_ms = (time.time() - start_time) * 1000
-            logger.warning("Health check failed for %s: %s", instance, e)
+            logger.warning("Health check failed for {}: {}", instance, e)
             return False, latency_ms
 
     async def _check_ollama(
@@ -102,7 +101,7 @@ class HealthCheckRegistry:
                 )
                 return False
         except Exception as e:
-            logger.warning("Ollama %s health check failed: %s", instance, e)
+            logger.warning("Ollama {} health check failed: {}", instance, e)
             return False
 
     async def _check_openai(
@@ -118,7 +117,7 @@ class HealthCheckRegistry:
 
         # If no API key and using OpenAI endpoint, skip (would fail auth)
         if "api.openai.com" in base_url and not api_key:
-            logger.debug("OpenAI %s: skipping health check (no API key)", instance)
+            logger.debug("OpenAI {}: skipping health check (no API key)", instance)
             return True  # Assume healthy, let actual requests verify
 
         try:
@@ -142,7 +141,7 @@ class HealthCheckRegistry:
 
                 # 401/403 might indicate API key issue, but endpoint is reachable
                 if resp.status_code in (401, 403):
-                    logger.debug("OpenAI %s reachable (auth error)", instance)
+                    logger.debug("OpenAI {} reachable (auth error)", instance)
                     return True
 
                 logger.warning(
@@ -150,7 +149,7 @@ class HealthCheckRegistry:
                 )
                 return False
         except Exception as e:
-            logger.warning("OpenAI %s health check failed: %s", instance, e)
+            logger.warning("OpenAI {} health check failed: {}", instance, e)
             return False
 
     async def _check_hailo(
@@ -179,14 +178,14 @@ class HealthCheckRegistry:
             result = await asyncio.to_thread(_check_device)
 
             if result:
-                logger.debug("Hailo %s healthy, device available", instance)
+                logger.debug("Hailo {} healthy, device available", instance)
             else:
-                logger.warning("Hailo %s unhealthy, device unavailable", instance)
+                logger.warning("Hailo {} unhealthy, device unavailable", instance)
 
             return result
         except ImportError:
-            logger.warning("Hailo %s: hailo_platform not installed", instance)
+            logger.warning("Hailo {}: hailo_platform not installed", instance)
             return True  # Assume healthy if library not available
         except Exception as e:
-            logger.warning("Hailo %s health check failed: %s", instance, e)
+            logger.warning("Hailo {} health check failed: {}", instance, e)
             return False

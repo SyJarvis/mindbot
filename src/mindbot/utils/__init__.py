@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 import re
 from functools import wraps
 from typing import Any, Callable, TypeVar
@@ -14,16 +13,20 @@ T = TypeVar("T")
 # Logging
 # ---------------------------------------------------------------------------
 
-def get_logger(name: str) -> logging.Logger:
-    """Return a consistently-configured logger."""
-    logger = logging.getLogger(f"Mindbot.{name}")
-    if not logger.handlers:
-        handler = logging.StreamHandler()
-        handler.setFormatter(
-            logging.Formatter("[%(asctime)s] %(name)s %(levelname)s: %(message)s", datefmt="%H:%M:%S")
-        )
-        logger.addHandler(handler)
-        logger.setLevel(logging.WARNING)
+def get_logger(name: str) -> Any:
+    """Backward-compatibility shim — returns the global loguru logger.
+
+    New code should import ``logger`` directly::
+
+        from mindbot.logging import logger
+
+    This shim exists so that modules not yet migrated continue to work.
+    The returned object is the same loguru ``logger`` singleton, so all
+    log records flow through the unified pipeline configured in
+    ``mindbot.logging.setup_logging``.
+    """
+    from mindbot.logging import logger  # noqa: PLC0415
+
     return logger
 
 

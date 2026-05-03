@@ -21,9 +21,8 @@ from typing import Any
 
 from mindbot.generation.models import ToolDefinition, ToolDefinitionError
 from mindbot.generation.protocols import GenerationRequest, GenerationValidationError
-from mindbot.utils import get_logger
+from mindbot.logging import logger
 
-logger = get_logger("generation.validator")
 
 # Required top-level fields in a serialised ToolDefinition
 _REQUIRED_FIELDS = {"name", "description"}

@@ -3,17 +3,12 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Awaitable, Callable
 
 from mindbot.config.schema import Config, ProviderInstanceConfig
 from mindbot.config.loader import load_config
-
-if TYPE_CHECKING:
-    pass
-
-logger = logging.getLogger("mindbot.config.store")
+from mindbot.logging import logger
 
 
 class ConfigStore:
@@ -77,7 +72,7 @@ class ConfigStore:
             old_config = self._config
             self._config = new_config
 
-        logger.info("Config reloaded from %s", self._path)
+        logger.info("Config reloaded from {}", self._path)
 
         # Notify callbacks outside the lock
         await self._notify_callbacks(new_config, old_config)
@@ -97,7 +92,7 @@ class ConfigStore:
         self._watcher_task = asyncio.create_task(
             start_watcher(self._path, self._on_file_changed)
         )
-        logger.info("Watching config file: %s", self._path)
+        logger.info("Watching config file: {}", self._path)
 
     async def stop_watch(self) -> None:
         """Stop the file watcher."""
@@ -160,7 +155,7 @@ class ConfigStore:
             providers[name] = provider_config
             self._config = self._config.model_copy(update={"providers": providers})
 
-        logger.info("Provider %s updated", name)
+        logger.info("Provider {} updated", name)
         await self._notify_callbacks(self._config, old_config)
 
     async def remove_provider(self, name: str) -> bool:
@@ -181,7 +176,7 @@ class ConfigStore:
             del providers[name]
             self._config = self._config.model_copy(update={"providers": providers})
 
-        logger.info("Provider %s removed", name)
+        logger.info("Provider {} removed", name)
         await self._notify_callbacks(self._config, old_config)
         return True
 
@@ -202,4 +197,4 @@ class ConfigStore:
         # Pretty-print with 2-space indent
         text = json.dumps(data, indent=2, ensure_ascii=False)
         self._path.write_text(text + "\n", encoding="utf-8")
-        logger.info("Config written back to %s", self._path)
+        logger.info("Config written back to {}", self._path)

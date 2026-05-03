@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 from typing import Any, Callable, Awaitable
 
-from loguru import logger
+from mindbot.logging import logger
 
 from mindbot.acp.permission import PermissionResolver
 from mindbot.acp.protocol import JsonRpcError

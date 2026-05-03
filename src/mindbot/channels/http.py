@@ -7,7 +7,7 @@ from typing import Any
 
 from aiohttp import web
 
-from loguru import logger
+from mindbot.logging import logger
 
 from mindbot.bus.events import OutboundMessage
 from mindbot.bus.queue import MessageBus

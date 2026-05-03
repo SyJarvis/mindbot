@@ -6,7 +6,7 @@ import asyncio
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from loguru import logger
+from mindbot.logging import logger
 
 from mindbot.bus.events import InboundMessage, OutboundMessage
 from mindbot.bus.outbound import build_outbound_message

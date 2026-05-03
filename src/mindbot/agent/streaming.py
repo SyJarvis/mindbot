@@ -13,10 +13,9 @@ from typing import Any, Callable
 from mindbot.agent.models import AgentEvent
 from mindbot.context.models import ChatResponse, Message
 from mindbot.providers.adapter import ProviderAdapter
-from mindbot.utils import get_logger
+from mindbot.logging import logger
 
 
-logger = get_logger("agent.streaming")
 
 
 class StreamingExecutor:

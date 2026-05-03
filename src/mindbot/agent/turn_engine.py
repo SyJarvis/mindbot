@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import time
 import uuid
 from collections.abc import AsyncIterator, Callable
 from typing import TYPE_CHECKING, Any
@@ -14,14 +15,13 @@ from typing import TYPE_CHECKING, Any
 from mindbot.agent.models import AgentEvent, AgentResponse, StopReason
 from mindbot.agent.streaming import StreamingExecutor
 from mindbot.context.models import Message, ToolCall
+from mindbot.logging import logger, set_log_context
+from mindbot.logging_turn import get_turn_logger
 from mindbot.providers.adapter import ProviderAdapter
-from mindbot.utils import get_logger
 
 if TYPE_CHECKING:
     from mindbot.capability.facade import CapabilityFacade
     from mindbot.capability.backends.tooling.models import Tool
-
-logger = get_logger("agent.turn_engine")
 
 
 class TurnEngine:
@@ -54,12 +54,18 @@ class TurnEngine:
     ) -> AgentResponse:
         """完整执行 turn，返回 AgentResponse。"""
         resolved_turn_id = turn_id or uuid.uuid4().hex
+        set_log_context(turn_id=resolved_turn_id)
+
         response = AgentResponse(content="")
         response.metadata["turn_id"] = resolved_turn_id
         initial_len = len(messages)
+        t0 = time.monotonic()
+
+        logger.debug("turn.start turn_id={} messages={} tools={}", resolved_turn_id, initial_len, len(self._tools))
 
         try:
             for iteration in range(self._max_iterations):
+                logger.debug("turn.iteration.start turn_id={} iteration={}", resolved_turn_id, iteration)
                 should_continue, messages = await self._execute_iteration(
                     messages=messages,
                     iteration=iteration,
@@ -67,6 +73,7 @@ class TurnEngine:
                     response=response,
                     turn_id=resolved_turn_id,
                 )
+                logger.debug("turn.iteration.finish turn_id={} iteration={} continue={}", resolved_turn_id, iteration, should_continue)
                 if not should_continue:
                     break
             else:
@@ -78,12 +85,19 @@ class TurnEngine:
                 on_event(AgentEvent.complete(response.stop_reason))
 
         except Exception as exc:
-            logger.exception("Error while running turn")
+            logger.exception("turn.error turn_id={}", resolved_turn_id)
             response.stop_reason = StopReason.ERROR
             if on_event:
                 on_event(AgentEvent.error(str(exc)))
 
+        elapsed = time.monotonic() - t0
+        logger.info(
+            "turn.finish turn_id={} stop_reason={} elapsed={:.3f}s content_len={}",
+            resolved_turn_id, response.stop_reason, elapsed, len(response.content),
+        )
+
         self._build_trace(messages, initial_len, response, resolved_turn_id)
+        self._write_turn_record(messages, initial_len, response, resolved_turn_id)
         return response
 
     # ------------------------------------------------------------------
@@ -104,9 +118,14 @@ class TurnEngine:
         流结束后通过 last_stream_response 属性获取完整 AgentResponse。
         """
         resolved_turn_id = turn_id or uuid.uuid4().hex
+        set_log_context(turn_id=resolved_turn_id)
+
         response = AgentResponse(content="")
         response.metadata["turn_id"] = resolved_turn_id
         initial_len = len(messages)
+        t0 = time.monotonic()
+
+        logger.debug("turn.start(stream) turn_id={} messages={} tools={}", resolved_turn_id, initial_len, len(self._tools))
 
         try:
             for iteration in range(self._max_iterations):
@@ -114,6 +133,7 @@ class TurnEngine:
                 if on_event:
                     on_event(AgentEvent.thinking())
 
+                logger.debug("llm.request.start turn_id={} iteration={}", resolved_turn_id, iteration)
                 text_chunks: list[str] = []
                 async for chunk in self._streaming_executor.stream(
                     messages, tools=self._tools,
@@ -125,6 +145,11 @@ class TurnEngine:
 
                 llm_response = self._streaming_executor.last_chat_response
                 tool_calls = llm_response.tool_calls
+
+                logger.debug(
+                    "llm.response.received turn_id={} iteration={} tool_calls={} content_len={}",
+                    resolved_turn_id, iteration, len(tool_calls or []), len(llm_response.content or ""),
+                )
 
                 if not tool_calls:
                     # 最终文本回复：逐 token yield
@@ -142,6 +167,7 @@ class TurnEngine:
                     break
 
                 # 工具调用：构建 trace，执行工具
+                logger.debug("tool_calls.detected turn_id={} iteration={} tools={}", resolved_turn_id, iteration, [tc.name for tc in tool_calls])
                 assistant_message = self._make_trace_message(
                     role="assistant",
                     content=llm_response.content or "",
@@ -184,12 +210,19 @@ class TurnEngine:
                 response.stop_reason = StopReason.MAX_TURNS
 
         except Exception as exc:
-            logger.exception("Error while running turn (stream)")
+            logger.exception("turn.error(stream) turn_id={}", resolved_turn_id)
             response.stop_reason = StopReason.ERROR
             if on_event:
                 on_event(AgentEvent.error(str(exc)))
 
+        elapsed = time.monotonic() - t0
+        logger.info(
+            "turn.finish(stream) turn_id={} stop_reason={} elapsed={:.3f}s",
+            resolved_turn_id, response.stop_reason, elapsed,
+        )
+
         self._build_trace(messages, initial_len, response, resolved_turn_id)
+        self._write_turn_record(messages, initial_len, response, resolved_turn_id)
         self._last_stream_response = response
 
     @property
@@ -254,10 +287,15 @@ class TurnEngine:
         turn_id: str | None = None,
     ) -> tuple[bool, list[Message]]:
         """Execute one LLM step and optional tool round."""
+        logger.debug("llm.request.start turn_id={} iteration={} messages={}", turn_id, iteration, len(messages))
         llm_response = await self._streaming_executor.execute_stream(
             messages=messages,
             on_event=on_event,
             tools=self._tools,
+        )
+        logger.debug(
+            "llm.response.received turn_id={} iteration={} tool_calls={} content_len={}",
+            turn_id, iteration, len(llm_response.tool_calls or []), len(llm_response.content or ""),
         )
 
         tool_calls = llm_response.tool_calls
@@ -284,8 +322,8 @@ class TurnEngine:
                     clean = re.sub(r'\{\s*"name"\s*:\s*"[^"]*"\s*,\s*"arguments"\s*:\s*\{[\s\S]*?\}\s*\}', '', llm_response.content).strip()
                     llm_response.content = clean
                     tool_calls = detected
-                    logger.info("Detected %d text tool calls: %s",
-                                len(detected), [tc.name for tc in detected])
+                    logger.info("tool_calls.detected(text) turn_id={} iteration={} tools={}",
+                                turn_id, iteration, [tc.name for tc in detected])
 
         if not tool_calls:
             response.content = llm_response.content or ""
@@ -296,6 +334,8 @@ class TurnEngine:
             }
             response.stop_reason = StopReason.COMPLETED
             return False, messages
+
+        logger.debug("tool_calls.detected turn_id={} iteration={} tools={}", turn_id, iteration, [tc.name for tc in tool_calls])
 
         assistant_message = self._make_trace_message(
             role="assistant",
@@ -355,6 +395,8 @@ class TurnEngine:
         results: list[ToolResult] = []
 
         for tool_call in tool_calls:
+            t0 = time.monotonic()
+            logger.debug("tool.start turn_id={} tool={} call_id={}", turn_id, tool_call.name, tool_call.id)
             try:
                 if on_event:
                     on_event(AgentEvent.tool_executing(
@@ -365,7 +407,12 @@ class TurnEngine:
 
                 tool_result = await self._resolve_and_execute(tool_call, turn_id)
                 results.append(tool_result)
+                elapsed = time.monotonic() - t0
 
+                logger.debug(
+                    "tool.finish turn_id={} tool={} call_id={} success={} elapsed={:.3f}s",
+                    turn_id, tool_call.name, tool_call.id, tool_result.success, elapsed,
+                )
                 if on_event:
                     on_event(
                         AgentEvent.tool_result(
@@ -376,7 +423,11 @@ class TurnEngine:
                     )
 
             except Exception as exc:
-                logger.exception("Error executing tool %s", tool_call.name)
+                elapsed = time.monotonic() - t0
+                logger.exception(
+                    "tool.error turn_id={} tool={} call_id={} elapsed={:.3f}s",
+                    turn_id, tool_call.name, tool_call.id, elapsed,
+                )
                 if on_event:
                     on_event(AgentEvent.error(f"Tool execution error: {exc}"))
                 results.append(
@@ -417,7 +468,7 @@ class TurnEngine:
         )
 
     # ------------------------------------------------------------------
-    # Trace 构建
+    # Trace 构建 & JSONL 写入
     # ------------------------------------------------------------------
 
     def _build_trace(
@@ -450,6 +501,28 @@ class TurnEngine:
         if trace:
             trace[-1].stop_reason = response.stop_reason.value
         response.message_trace = trace
+
+    def _write_turn_record(
+        self,
+        messages: list[Message],
+        initial_len: int,
+        response: AgentResponse,
+        turn_id: str,
+    ) -> None:
+        """Write one JSONL record to turns.jsonl for fine-tuning data collection."""
+        from mindbot.logging import _session_id_var  # noqa: PLC0415
+
+        turn_messages = messages[initial_len:]
+        if not turn_messages:
+            return
+
+        get_turn_logger().log_turn(
+            session_id=_session_id_var.get(),
+            turn_id=turn_id,
+            turn_messages=turn_messages,
+            response=response.content,
+            stop_reason=response.stop_reason.value if response.stop_reason else "UNKNOWN",
+        )
 
     @staticmethod
     def _has_repeated_tool_call(

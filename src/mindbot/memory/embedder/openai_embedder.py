@@ -5,9 +5,8 @@ from __future__ import annotations
 from typing import Any
 
 from mindbot.memory.embedder.base import Embedder
-from mindbot.utils import get_logger
+from mindbot.logging import logger
 
-logger = get_logger("memory.openai_embedder")
 
 
 class OpenAIEmbedder(Embedder):

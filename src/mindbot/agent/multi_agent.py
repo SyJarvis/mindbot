@@ -12,9 +12,8 @@ from typing import Any
 
 from mindbot.agent.agent import Agent
 from mindbot.agent.models import AgentResponse, StopReason
-from mindbot.utils import get_logger
+from mindbot.logging import logger
 
-logger = get_logger("agent.multi")
 
 
 class AgentLaborMarket:

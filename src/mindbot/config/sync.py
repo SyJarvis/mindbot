@@ -1,12 +1,11 @@
 """配置同步 - Phase 4 (可选)"""
 
 import asyncio
-import logging
 from typing import Any, Optional, Protocol
 
 from mindbot.config.bus import ConfigBus
+from mindbot.logging import logger
 
-logger = logging.getLogger(__name__)
 
 
 class SyncBackend(Protocol):

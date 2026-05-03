@@ -1,12 +1,11 @@
 """配置事件总线 - Phase 1"""
 
 import asyncio
-import logging
 from collections import defaultdict
 from collections.abc import Callable
 from typing import Any
+from mindbot.logging import logger
 
-logger = logging.getLogger(__name__)
 
 
 class ConfigBus:

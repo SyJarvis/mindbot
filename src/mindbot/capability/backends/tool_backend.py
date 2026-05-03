@@ -49,9 +49,8 @@ from mindbot.context.models import ToolCall
 from mindbot.generation.executor import DynamicToolExecutor
 from mindbot.generation.models import ToolDefinition
 from mindbot.generation.registry import ToolDefinitionRegistry
-from mindbot.utils import get_logger
+from mindbot.logging import logger
 
-logger = get_logger("capability.backends.tool_backend")
 
 
 class ToolBackend:
@@ -210,7 +209,7 @@ class ToolBackend:
         loaded = self._def_registry.load_all()
         for defn in self._def_registry.list_all():
             self._index_dynamic(defn, raise_on_conflict=False)
-        logger.info("ToolBackend loaded %d dynamic tool definitions", loaded)
+        logger.info("ToolBackend loaded {} dynamic tool definitions", loaded)
         return loaded
 
     def register_dynamic(

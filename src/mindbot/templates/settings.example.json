@@ -150,5 +150,8 @@
       "encrypt_key": "",
       "verification_token": ""
     }
+  },
+  "logging": {
+    "level": "DEBUG"
   }
 }

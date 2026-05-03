@@ -15,9 +15,8 @@ from mindbot.memory.types import (
     MemoryProfile,
     ShardIndex,
 )
-from mindbot.utils import get_logger
+from mindbot.logging import logger
 
-logger = get_logger("memory.index_store")
 
 
 @dataclass

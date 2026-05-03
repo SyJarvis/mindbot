@@ -11,9 +11,8 @@ import numpy as np
 import pyarrow as pa
 
 from mindbot.memory.storage.vector_store import SearchResult, VectorStore
-from mindbot.utils import get_logger
+from mindbot.logging import logger
 
-logger = get_logger("memory.lance_store")
 
 
 class LanceVectorStore(VectorStore):

@@ -30,9 +30,8 @@ from mindbot.memory.types import (
     ShardType,
 )
 from mindbot.memory.migration.package import MigrationPackage
-from mindbot.utils import get_logger
+from mindbot.logging import logger
 
-logger = get_logger("memory.manager")
 
 
 @dataclass

@@ -8,9 +8,8 @@ from pathlib import Path
 
 from mindbot.context.models import ImagePart, TextPart
 from mindbot.multimodal.models import ContentItem, MediaSource, MediaType
-from mindbot.utils import get_logger
+from mindbot.logging import logger
 
-logger = get_logger("multimodal.processor")
 
 # Upper bounds applied *before* any network/disk IO.
 _DEFAULT_MAX_IMAGES = 10

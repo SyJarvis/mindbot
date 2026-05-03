@@ -17,9 +17,7 @@ from mindbot.capability.models import (
     CapabilityQuery,
 )
 from mindbot.capability.registry import CapabilityRegistry
-from mindbot.utils import get_logger
-
-logger = get_logger("capability.executor")
+from mindbot.logging import logger
 
 
 class CapabilityExecutor:
@@ -110,7 +108,7 @@ class CapabilityExecutor:
             for cap in backend.list_capabilities():
                 new_routing[cap.id] = backend
         self._routing = new_routing
-        logger.debug("Routing table rebuilt: %d entries", len(self._routing))
+        logger.debug("Routing table rebuilt: {} entries", len(self._routing))
 
     def build_registry(self) -> CapabilityRegistry:
         """Build a :class:`~mindbot.capability.registry.CapabilityRegistry`

@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING
 
 from mindbot.context.manager import ContextManager
 from mindbot.context.models import Message, MessageContent
-from mindbot.utils import estimate_tokens, get_logger
+from mindbot.utils import estimate_tokens
 
 if TYPE_CHECKING:
     from mindbot.config.schema import SkillsConfig
@@ -25,8 +25,8 @@ if TYPE_CHECKING:
 
 from mindbot.skills.render import render_skills_detail, render_skills_overview
 from mindbot.skills.selector import SkillSelector
+from mindbot.logging import logger
 
-logger = get_logger("agent.input_builder")
 
 
 def _extract_text(content: MessageContent) -> str:
