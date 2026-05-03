@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 import os
 
-from loguru import logger
+from mindbot.logging import logger
 
 from mindbot.acp.protocol import JsonRpcConnection
 

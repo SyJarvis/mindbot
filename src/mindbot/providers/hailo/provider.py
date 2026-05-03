@@ -19,9 +19,8 @@ from mindbot.context.models import (
     ToolCall,
     UsageInfo,
 )
-from mindbot.utils import get_logger
+from mindbot.logging import logger
 
-logger = get_logger("providers.hailo")
 
 MODEL_HEF_MAP: dict[str, str] = {
     "qwen3:1.7b": "sha256_cc9b9d1c92e35249b5a9b7bc31fbd652f03bba1232e99b9a8271845ad6f17821",
@@ -77,7 +76,7 @@ class _DeviceManager:
 
             self._vdevice, self._llm = await asyncio.to_thread(_load)
             self._loaded_model = model
-            logger.info("Hailo device loaded: %s", model)
+            logger.info("Hailo device loaded: {}", model)
             return self._llm
 
     async def release(self) -> None:
@@ -94,7 +93,7 @@ class _DeviceManager:
             await asyncio.to_thread(self._vdevice.release)
             self._vdevice = None
         if self._loaded_model is not None:
-            logger.info("Hailo device released: %s", self._loaded_model)
+            logger.info("Hailo device released: {}", self._loaded_model)
         self._loaded_model = None
 
 

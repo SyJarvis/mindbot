@@ -22,7 +22,7 @@ from mindbot.context.models import (
     ToolCall,
     UsageInfo,
 )
-from mindbot.utils import get_logger
+from mindbot.logging import logger
 
 # Well-known Ollama model context windows (fallback when API doesn't report num_ctx)
 # Source: https://ollama.com/library models' default num_ctx
@@ -67,7 +67,6 @@ OLLAMA_MODEL_CONTEXT_WINDOW: dict[str, int] = {
     "mixtral:8x7b": 32768,
 }
 
-logger = get_logger("providers.ollama")
 
 class OllamaProvider(Provider):
     """Concrete provider talking to a local Ollama instance via HTTP.
@@ -263,7 +262,7 @@ class OllamaProvider(Provider):
             if "num_ctx" in details:
                 return int(details["num_ctx"])
         except Exception:
-            logger.debug("Could not fetch num_ctx from Ollama API for %s", effective_model)
+            logger.debug("Could not fetch num_ctx from Ollama API for {}", effective_model)
 
         # Fallback to known models table
         model_lower = effective_model.lower()
@@ -461,10 +460,10 @@ class OllamaProvider(Provider):
                             if not text:
                                 continue
                             # log raw progress chunks; callers can poll list_local_models
-                            logger.debug("pull progress: %s", text.strip())
+                            logger.debug("pull progress: {}", text.strip())
                     return True
                 except Exception:
-                    logger.exception("API pull failed for model %s", model)
+                    logger.exception("API pull failed for model {}", model)
                     return False
 
             if background:
@@ -478,9 +477,9 @@ class OllamaProvider(Provider):
                 try:
                     proc = subprocess.run(["ollama", "pull", model], capture_output=True, text=True, check=False)
                     if proc.returncode == 0:
-                        logger.info("CLI pull succeeded: %s", proc.stdout)
+                        logger.info("CLI pull succeeded: {}", proc.stdout)
                         return True
-                    logger.error("CLI pull failed (%s): %s", proc.returncode, proc.stderr)
+                    logger.error("CLI pull failed ({}): {}", proc.returncode, proc.stderr)
                     return False
                 except FileNotFoundError:
                     logger.exception("'ollama' CLI not found when attempting model pull")
@@ -492,7 +491,7 @@ class OllamaProvider(Provider):
                 return True
             return await loop.run_in_executor(None, _cli_pull)
 
-        logger.error("Unknown pull method: %s", method)
+        logger.error("Unknown pull method: {}", method)
         return False
 
     async def ensure_model(self, model: str, *, wait: bool = True, timeout: Optional[int] = None) -> bool:
@@ -506,7 +505,7 @@ class OllamaProvider(Provider):
 
         # determine whether to pull
         if not self._param.auto_pull:
-            logger.debug("Model %s not present and auto_pull disabled", model)
+            logger.debug("Model {} not present and auto_pull disabled", model)
             return False
 
         timeout = timeout if timeout is not None else self._param.pull_timeout
@@ -524,7 +523,7 @@ class OllamaProvider(Provider):
             if await self.is_model_available(model):
                 return True
             await asyncio.sleep(2)
-        logger.error("Timed out waiting for model %s to become available", model)
+        logger.error("Timed out waiting for model {} to become available", model)
         return False
 
     def supports_vision(self, model: str) -> bool:

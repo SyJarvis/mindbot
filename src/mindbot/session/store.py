@@ -7,9 +7,8 @@ from pathlib import Path
 from typing import Sequence
 
 from mindbot.session.types import SessionMessage
-from mindbot.utils import get_logger
+from mindbot.logging import logger
 
-logger = get_logger("session.store")
 
 
 class SessionJournal:

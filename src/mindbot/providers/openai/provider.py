@@ -19,9 +19,8 @@ from mindbot.context.models import (
     ToolCall,
     UsageInfo,
 )
-from mindbot.utils import get_logger
+from mindbot.logging import logger
 
-logger = get_logger("providers.openai")
 
 # Model name prefixes/patterns that support vision input.
 _VISION_PREFIXES = ("gpt-4o", "gpt-4-turbo", "gpt-4-vision", "o1", "o3")

@@ -3,7 +3,7 @@
 from abc import ABC, abstractmethod
 from typing import Any
 
-from loguru import logger
+from mindbot.logging import logger
 
 from mindbot.bus.events import InboundMessage, OutboundMessage
 from mindbot.bus.queue import MessageBus

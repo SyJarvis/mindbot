@@ -169,9 +169,9 @@ def create_agent(
         if info.context_window and info.context_window > 0:
             effective_max = min(context_config.max_tokens, info.context_window)
             if effective_max != context_config.max_tokens:
-                from mindbot.utils import get_logger
-                get_logger("builders").info(
-                    "Context max_tokens adjusted: %d → %d (provider %s/%s limit)",
+                from mindbot.logging import logger
+                logger.info(
+                    "Context max_tokens adjusted: {} → {} (provider {}/{} limit)",
                     context_config.max_tokens, effective_max, info.provider, info.model,
                 )
                 context_config = context_config.model_copy(update={"max_tokens": effective_max})

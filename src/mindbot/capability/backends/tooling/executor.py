@@ -8,9 +8,9 @@ from typing import Any
 
 from mindbot.capability.backends.tooling.registry import ToolRegistry
 from mindbot.context.models import ToolCall, ToolResult
-from mindbot.utils import get_logger, truncate
+from mindbot.utils import truncate
+from mindbot.logging import logger
 
-logger = get_logger("tooling.executor")
 
 _MAX_RESULT_LENGTH = 50_000
 
@@ -29,7 +29,7 @@ class ToolExecutor:
         """Execute a single *tool_call* and return a :class:`ToolResult`."""
         tool = self._registry.get(tool_call.name)
         if tool is None:
-            logger.warning("Tool not found: %s", tool_call.name)
+            logger.warning("Tool not found: {}", tool_call.name)
             return ToolResult(
                 tool_call_id=tool_call.id,
                 success=False,

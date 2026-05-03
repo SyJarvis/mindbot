@@ -5,9 +5,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from mindbot.utils import get_logger
+from mindbot.logging import logger
 
-logger = get_logger("memory.summarizer")
 
 
 class SummaryGenerator:

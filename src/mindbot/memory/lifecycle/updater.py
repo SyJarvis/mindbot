@@ -10,9 +10,8 @@ from mindbot.memory.storage.content_store import MarkdownContentStore
 from mindbot.memory.storage.index_store import JSONIndexStore
 from mindbot.memory.storage.vector_store import VectorStore
 from mindbot.memory.types import ShardType
-from mindbot.utils import get_logger
+from mindbot.logging import logger
 
-logger = get_logger("memory.updater")
 
 
 @dataclass

@@ -10,9 +10,9 @@ from mindbot.config.schema import ContextConfig
 from mindbot.context.checkpoint import Checkpoint
 from mindbot.context.compression import CompressionStrategy, TruncateStrategy
 from mindbot.context.models import Message, MessageRole
-from mindbot.utils import estimate_tokens, get_logger
+from mindbot.utils import estimate_tokens
+from mindbot.logging import logger
 
-logger = get_logger("context.manager")
 
 # Default ratios when explicit block budgets are not configured.
 _DEFAULT_RATIOS: dict[str, float] = {

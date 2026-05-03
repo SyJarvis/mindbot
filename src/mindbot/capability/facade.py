@@ -37,12 +37,10 @@ from mindbot.capability.models import (
     CapabilityType,
 )
 from mindbot.capability.registry import CapabilityRegistry
-from mindbot.utils import get_logger
+from mindbot.logging import logger
 
 if TYPE_CHECKING:
     from mindbot.capability.backends.tooling.models import Tool
-
-logger = get_logger("capability.facade")
 
 
 class CapabilityFacade:
@@ -178,7 +176,7 @@ class CapabilityFacade:
             CapabilityExecutionError: When the backend raises at runtime.
         """
         cap = self.resolve(query)
-        logger.debug("Resolved '%s' for query %s", cap.id, query)
+        logger.debug("Resolved '{}' for query {}", cap.id, query)
         return await self.execute(cap.id, arguments, context)
 
 
@@ -281,7 +279,7 @@ class ScopedCapabilityFacade:
     ) -> str:
         """Resolve against this scoped view, then execute on the owning backend."""
         capability = self.resolve(query)
-        logger.debug("Resolved '%s' for scoped query %s", capability.id, query)
+        logger.debug("Resolved '{}' for scoped query {}", capability.id, query)
 
         overlay_cap = self._overlay_registry.get_by_id(capability.id)
         if overlay_cap is not None:

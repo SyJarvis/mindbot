@@ -21,10 +21,9 @@ from mindbot.bot import MindBot
 from mindbot.config.loader import load_config
 from mindbot.config.schema import ToolAskMode, ToolPersistenceStrategy
 from mindbot.context.models import Message
-from mindbot.utils import get_logger
+from mindbot.logging import logger
 
 
-logger = get_logger("benchmarking.real_tools")
 
 CATEGORY_ORDER = (
     "tool_selection",

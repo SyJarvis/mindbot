@@ -23,9 +23,9 @@ from typing import Any, Callable
 
 from mindbot.capability.models import CapabilityExecutionError, CapabilityNotFoundError
 from mindbot.generation.models import ImplementationType, ToolDefinition
-from mindbot.utils import get_logger, truncate
+from mindbot.utils import truncate
+from mindbot.logging import logger
 
-logger = get_logger("generation.executor")
 
 _MAX_RESULT_LENGTH = 50_000
 

@@ -9,7 +9,7 @@ original channel via the message bus.
 from __future__ import annotations
 
 
-from loguru import logger
+from mindbot.logging import logger
 
 from mindbot.acp.config import ACPChannelConfig
 from mindbot.acp.session import ACPSessionManager

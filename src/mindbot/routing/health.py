@@ -13,9 +13,8 @@ if TYPE_CHECKING:
     from mindbot.routing.endpoint import EndpointManager
 
 from mindbot.routing.health_check import HealthCheckRegistry
-from mindbot.utils import get_logger
+from mindbot.logging import logger
 
-logger = get_logger("routing.health")
 
 
 @dataclass
@@ -136,7 +135,7 @@ class HealthMonitor:
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                logger.error("Probe loop error: %s", e)
+                logger.error("Probe loop error: {}", e)
 
             await asyncio.sleep(self._probe_config.probe_interval_seconds)
 
@@ -148,7 +147,7 @@ class HealthMonitor:
             logger.debug("No inactive endpoints to probe")
             return
 
-        logger.debug("Probing %d inactive endpoints", len(inactive_endpoints))
+        logger.debug("Probing {} inactive endpoints", len(inactive_endpoints))
 
         # Probe endpoints concurrently with timeout
         results = await asyncio.gather(
@@ -161,7 +160,7 @@ class HealthMonitor:
 
         for result in results:
             if isinstance(result, Exception):
-                logger.warning("Probe task raised exception: %s", result)
+                logger.warning("Probe task raised exception: {}", result)
             elif isinstance(result, ProbeResult):
                 self._process_probe_result(result)
 

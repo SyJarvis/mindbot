@@ -6,7 +6,7 @@ import asyncio
 from dataclasses import dataclass, field
 from datetime import datetime
 
-from loguru import logger
+from mindbot.logging import logger
 
 from mindbot.acp.client import ACPClient
 from mindbot.acp.config import ACPAgentConfig, ACPPermissionPolicy

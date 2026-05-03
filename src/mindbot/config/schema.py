@@ -9,6 +9,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from mindbot.logging import LoggingConfig
 
 # ============================================================================
 # Approval Enums (moved here to avoid circular imports)
@@ -622,6 +623,7 @@ class Config(BaseSettings):
     routing: RoutingConfig = Field(default_factory=RoutingConfig)
     session_journal: SessionJournalConfig = Field(default_factory=SessionJournalConfig)
     debug: DebugConfig = Field(default_factory=DebugConfig)
+    logging: LoggingConfig = Field(default_factory=LoggingConfig)
     tool_models: ToolModelsConfig = Field(default_factory=ToolModelsConfig)
     multimodal: MultimodalConfig = Field(default_factory=MultimodalConfig)
     channels: ChannelsConfig = Field(default_factory=ChannelsConfig)

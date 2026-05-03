@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     from mindbot.context.models import ChatResponse, Message, ProviderInfo
     from mindbot.capability.backends.tooling.models import Tool
 
+from mindbot.logging import logger
 from mindbot.routing.router import ModelRouter
 from mindbot.routing.endpoint import EndpointManager
 from mindbot.providers.adapter import ProviderAdapter
@@ -65,9 +66,7 @@ class RoutingProviderAdapter:
         **kwargs: Any,
     ) -> ChatResponse:
         decision = self._router.select_model(messages)
-        from mindbot.utils import get_logger
-        logger = get_logger("routing")
-        logger.info("Routing decision: %s", decision)
+        logger.info("Routing decision: {}", decision)
 
         effective_tools = tools if tools is not None else (self._bound_tools or None)
         tried: list[str] = []
@@ -101,7 +100,7 @@ class RoutingProviderAdapter:
                 self._endpoint_manager.record_success(instance, endpoint_idx)
                 return result
             except Exception as exc:
-                logger.warning("Model %s failed: %s – trying fallback", label, exc)
+                logger.warning("Model {} failed: {} – trying fallback", label, exc)
                 last_exc = exc
                 self._endpoint_manager.record_failure(instance, endpoint_idx)
 
@@ -118,9 +117,7 @@ class RoutingProviderAdapter:
         **kwargs: Any,
     ) -> AsyncIterator[str]:
         decision = self._router.select_model(messages)
-        from mindbot.utils import get_logger
-        logger = get_logger("routing")
-        logger.info("Routing decision (stream): %s", decision)
+        logger.info("Routing decision (stream): {}", decision)
 
         tried: list[str] = []
         last_exc: Exception | None = None
@@ -150,7 +147,7 @@ class RoutingProviderAdapter:
                 self._endpoint_manager.record_success(instance, endpoint_idx)
                 return
             except Exception as exc:
-                logger.warning("Stream model %s failed: %s – trying fallback", label, exc)
+                logger.warning("Stream model {} failed: {} – trying fallback", label, exc)
                 last_exc = exc
                 self._endpoint_manager.record_failure(instance, endpoint_idx)
 

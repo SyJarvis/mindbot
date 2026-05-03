@@ -22,9 +22,8 @@ from mindbot.generation.models import (
     ToolDefinitionNotFoundError,
 )
 from mindbot.generation.validator import validate_tool_definition
-from mindbot.utils import get_logger
+from mindbot.logging import logger
 
-logger = get_logger("generation.registry")
 
 _DEFAULT_DIR = Path.home() / ".mindbot" / "tools"
 _ENV_KEY = "MINDBOT_TOOLS_DIR"
@@ -72,8 +71,8 @@ class ToolDefinitionRegistry:
                 self._load_file(path)
                 loaded += 1
             except Exception as exc:
-                logger.warning("Failed to load tool definition from %s: %s", path, exc)
-        logger.info("Loaded %d tool definitions from %s", loaded, self._dir)
+                logger.warning("Failed to load tool definition from {}: {}", path, exc)
+        logger.info("Loaded {} tool definitions from {}", loaded, self._dir)
         return loaded
 
     def _load_file(self, path: Path) -> ToolDefinition:
@@ -220,4 +219,4 @@ class ToolDefinitionRegistry:
         try:
             path.unlink(missing_ok=True)
         except OSError as exc:
-            logger.warning("Could not delete file %s: %s", path, exc)
+            logger.warning("Could not delete file {}: {}", path, exc)

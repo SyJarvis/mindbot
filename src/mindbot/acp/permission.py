@@ -7,7 +7,7 @@ and (future) interactive approval via chat platform.
 
 from __future__ import annotations
 
-from loguru import logger
+from mindbot.logging import logger
 
 
 

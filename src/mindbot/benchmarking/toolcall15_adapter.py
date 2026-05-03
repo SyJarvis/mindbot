@@ -16,13 +16,12 @@ from mindbot.builders import create_llm
 from mindbot.capability.backends.tooling.models import Tool
 from mindbot.config.loader import load_config
 from mindbot.context.models import ChatResponse, Message, ToolCall, UsageInfo
-from mindbot.utils import get_logger
+from mindbot.logging import logger
 
 if TYPE_CHECKING:
     from mindbot.config.schema import Config
 
 
-logger = get_logger("benchmarking.toolcall15")
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 11435

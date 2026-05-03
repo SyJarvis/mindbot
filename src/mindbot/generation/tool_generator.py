@@ -35,9 +35,8 @@ from mindbot.generation.protocols import (
     GenerationValidationError,
 )
 from mindbot.generation.validator import ToolDefinitionValidator
-from mindbot.utils import get_logger
+from mindbot.logging import logger
 
-logger = get_logger("generation.tool_generator")
 
 _MAX_ATTEMPTS = 3
 
@@ -184,7 +183,7 @@ class ToolGenerator:
 
         for attempt in range(1, self._max_attempts + 1):
             result.attempts = attempt
-            logger.debug("Generation attempt %d/%d for '%s'", attempt, self._max_attempts, request.description[:60])
+            logger.debug("Generation attempt {}/{} for '%s'", attempt, self._max_attempts, request.description[:60])
 
             try:
                 raw = await self._strategy.call(request)
@@ -200,7 +199,7 @@ class ToolGenerator:
                 return result
 
             except GenerationValidationError as exc:
-                logger.warning("Attempt %d validation failed: %s", attempt, exc)
+                logger.warning("Attempt {} validation failed: {}", attempt, exc)
                 result.error = str(exc)
                 result.raw_output = last_raw
 

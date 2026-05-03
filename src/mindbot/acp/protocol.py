@@ -13,7 +13,7 @@ import json
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from loguru import logger
+from mindbot.logging import logger
 
 
 class JsonRpcError(Exception):

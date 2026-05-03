@@ -7,7 +7,7 @@ message bus, and prints outbound message content to stdout.
 import asyncio
 from typing import Any
 
-from loguru import logger
+from mindbot.logging import logger
 
 from mindbot.bus.events import OutboundMessage
 from mindbot.bus.queue import MessageBus

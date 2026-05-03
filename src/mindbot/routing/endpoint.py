@@ -18,9 +18,8 @@ if TYPE_CHECKING:
     from mindbot.config.schema import Config, EndpointConfig
 
 from mindbot.routing.models import EndpointCandidate
-from mindbot.utils import get_logger
+from mindbot.logging import logger
 
-logger = get_logger("routing.endpoint")
 
 
 @dataclass
@@ -280,7 +279,7 @@ class EndpointManager:
         key = f"{instance}:{endpoint_index}"
         health = self._health[key]
         health.mark_healthy_from_probe()
-        logger.info("Endpoint %s recovered to healthy state", key)
+        logger.info("Endpoint {} recovered to healthy state", key)
 
     def mark_probing(self, instance: str, endpoint_index: str) -> None:
         """标记端点正在探测中。"""

@@ -8,7 +8,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Coroutine
 
-from loguru import logger
+from mindbot.logging import logger
 
 from mindbot.cron.types import (
     CronJob,

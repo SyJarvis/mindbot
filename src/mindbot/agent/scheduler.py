@@ -12,14 +12,13 @@ from typing import TYPE_CHECKING
 from mindbot.agent.input_builder import InputBuilder
 from mindbot.context.manager import ContextManager
 from mindbot.context.models import Message, MessageContent
-from mindbot.utils import get_logger
+from mindbot.logging import logger
 
 if TYPE_CHECKING:
     from mindbot.config.schema import SkillsConfig
     from mindbot.memory.manager import MemoryManager
     from mindbot.skills.registry import SkillRegistry
 
-logger = get_logger("agent.scheduler")
 
 
 class Scheduler:

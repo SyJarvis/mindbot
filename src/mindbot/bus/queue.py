@@ -3,7 +3,7 @@
 import asyncio
 from typing import Callable, Awaitable
 
-from loguru import logger
+from mindbot.logging import logger
 
 from mindbot.bus.events import InboundMessage, OutboundMessage
 
