@@ -15,18 +15,6 @@ from mindbot.utils import get_logger
 
 logger = get_logger("memory.lance_store")
 
-# LanceDB schema
-SCHEMA = pa.schema([
-    pa.field("shard_id", pa.utf8()),
-    pa.field("vector", pa.list_(pa.float32())),
-    pa.field("text", pa.utf8()),           # Store summary for FTS
-    pa.field("cluster_id", pa.utf8()),
-    pa.field("chunk_id", pa.utf8()),
-    pa.field("shard_type", pa.utf8()),
-    pa.field("created_at", pa.float64()),
-    pa.field("updated_at", pa.float64()),
-])
-
 
 class LanceVectorStore(VectorStore):
     """LanceDB-based vector store with FTS support."""
@@ -206,20 +194,6 @@ class LanceVectorStore(VectorStore):
     # ------------------------------------------------------------------
     # Index Management
     # ------------------------------------------------------------------
-
-    def create_vector_index(self) -> None:
-        """Create IVF-PQ vector index for faster ANN search."""
-        if self.count() < 100:
-            logger.debug("Too few vectors for index creation, skipping")
-            return
-        try:
-            self._table.create_index(
-                metric="cosine",
-                vector_column_name="vector",
-            )
-            logger.info(f"Created vector index on {self.count()} vectors")
-        except Exception as e:
-            logger.warning(f"Failed to create vector index: {e}")
 
     def _ensure_fts(self) -> None:
         """Ensure FTS index exists for full-text search."""

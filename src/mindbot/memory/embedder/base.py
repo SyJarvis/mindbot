@@ -25,20 +25,8 @@ class Embedder(ABC):
         """Synchronous encode fallback (wraps async)."""
         import asyncio
         try:
-            loop = asyncio.get_running_loop()
             import concurrent.futures
             with concurrent.futures.ThreadPoolExecutor() as pool:
                 return pool.submit(asyncio.run, self.encode(text)).result()
         except RuntimeError:
             return asyncio.run(self.encode(text))
-
-    def encode_batch_sync(self, texts: list[str]) -> list[list[float]]:
-        """Synchronous batch encode fallback."""
-        import asyncio
-        try:
-            loop = asyncio.get_running_loop()
-            import concurrent.futures
-            with concurrent.futures.ThreadPoolExecutor() as pool:
-                return pool.submit(asyncio.run, self.encode_batch(texts)).result()
-        except RuntimeError:
-            return asyncio.run(self.encode_batch(texts))

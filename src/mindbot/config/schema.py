@@ -479,6 +479,18 @@ class SkillsConfig(BaseModel):
     max_visible: int = Field(default=8, ge=0)
     max_detail_load: int = Field(default=2, ge=0)
     trigger_mode: Literal["metadata-match", "explicit-only", "hybrid"] = "metadata-match"
+    scripts: "SkillScriptsConfig" = Field(default_factory=lambda: SkillScriptsConfig())
+
+
+class SkillScriptsConfig(BaseModel):
+    """Configuration for skill script execution."""
+
+    enabled: bool = False
+    allowlist: list[str] = Field(default_factory=list)
+    max_timeout: int = Field(default=60, ge=1, le=300)
+    allowed_languages: list[str] = Field(
+        default_factory=lambda: ["python", "bash", "sh"]
+    )
 
 
 class ContextBlocksConfig(BaseModel):

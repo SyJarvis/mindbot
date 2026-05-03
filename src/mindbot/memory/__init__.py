@@ -13,6 +13,12 @@ from mindbot.memory.storage import (
     VectorStore,
 )
 
+# Embedder
+from mindbot.memory.embedder import Embedder, OpenAIEmbedder
+
+# Retrieval
+from mindbot.memory.retrieval import HybridRetriever
+
 # Migration
 from mindbot.memory.migration import (
     ExportOptions,

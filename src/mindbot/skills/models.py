@@ -8,6 +8,67 @@ from typing import Any, Literal
 
 
 SkillLoadMode = Literal["overview", "detail"]
+SkillScope = Literal["builtin", "user", "project", "extra"]
+ScriptLanguage = Literal["python", "bash", "sh", "node", "ruby", "perl", ""]
+
+
+def _detect_language(path: Path) -> str:
+    """Detect script language from file extension."""
+    suffix = path.suffix.lower()
+    mapping = {
+        ".py": "python",
+        ".sh": "bash",
+        ".bash": "bash",
+        ".js": "node",
+        ".rb": "ruby",
+        ".pl": "perl",
+    }
+    return mapping.get(suffix, "")
+
+
+def _build_entrypoint(path: Path) -> str:
+    """Build execution entrypoint for a script."""
+    suffix = path.suffix.lower()
+    mapping = {
+        ".py": "python {path}",
+        ".sh": "bash {path}",
+        ".bash": "bash {path}",
+        ".js": "node {path}",
+        ".rb": "ruby {path}",
+        ".pl": "perl {path}",
+    }
+    return mapping.get(suffix, "{path}")
+
+
+@dataclass(frozen=True)
+class ScriptDefinition:
+    """Definition of an executable script bundled with a skill."""
+
+    name: str
+    path: Path
+    description: str = ""
+    language: str = ""
+    entrypoint: str = ""
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.path, Path):
+            object.__setattr__(self, "path", Path(self.path))
+
+    @classmethod
+    def from_file(cls, path: Path, description: str = "") -> "ScriptDefinition":
+        """Create a ScriptDefinition from a script file path."""
+        return cls(
+            name=path.stem,
+            path=path,
+            description=description,
+            language=_detect_language(path),
+            entrypoint=_build_entrypoint(path),
+        )
+
+    @property
+    def command(self) -> str:
+        """Get the full command to execute this script."""
+        return self.entrypoint.format(path=str(self.path))
 
 
 @dataclass(frozen=True)
@@ -24,9 +85,11 @@ class SkillDefinition:
     agent: str | None = None
     paths: list[str] = field(default_factory=list)
     loaded_from: str = ""
+    scope: SkillScope = "user"
     skill_dir: Path = field(default_factory=Path)
     body: str = ""
     metadata: dict[str, Any] = field(default_factory=dict)
+    scripts: list[ScriptDefinition] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         if not self.name:
@@ -43,6 +106,7 @@ class SkillDefinition:
             when_to_use=self.when_to_use,
             allowed_tools=list(self.allowed_tools),
             loaded_from=self.loaded_from,
+            scope=self.scope,
         )
 
     @property
@@ -54,8 +118,16 @@ class SkillDefinition:
             self.when_to_use,
             " ".join(self.allowed_tools),
             " ".join(self.paths),
+            " ".join(s.name for s in self.scripts),
         ]
         return " ".join(part for part in parts if part).strip().lower()
+
+    def get_script(self, name: str) -> ScriptDefinition | None:
+        """Get a script by name."""
+        for script in self.scripts:
+            if script.name == name:
+                return script
+        return None
 
 
 @dataclass(frozen=True)
@@ -67,6 +139,7 @@ class SkillSummary:
     when_to_use: str = ""
     allowed_tools: list[str] = field(default_factory=list)
     loaded_from: str = ""
+    scope: SkillScope = "user"
 
 
 @dataclass(frozen=True)

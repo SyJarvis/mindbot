@@ -630,19 +630,6 @@ class MemoryManager:
         }
         return mapping.get(shard_type, ChunkType.KNOWLEDGE)
 
-    def _generate_simple_summary(self, text: str, max_len: int = 100) -> str:
-        """Generate a simple summary (first sentence or truncated)."""
-        text = text.strip()
-        if len(text) <= max_len:
-            return text
-
-        for end_char in ".!?":
-            pos = text.find(end_char)
-            if 0 < pos < max_len:
-                return text[:pos + 1]
-
-        return text[:max_len - 3] + "..."
-
     def _index_vector(
         self,
         shard_id: str,
@@ -744,25 +731,3 @@ class MemoryManager:
         )
         options = ImportOptions(new_agent_id=new_agent_id)
         return importer.import_from_file(file_path, options=options)
-
-    def clone_agent(
-        self,
-        new_agent_id: str,
-        new_agent_name: str,
-    ) -> MemoryManager:
-        """Clone current agent to a new identity."""
-        package = self.export_profile()
-        report = self.import_from_package(
-            package,
-            new_agent_id=new_agent_id,
-            new_agent_name=new_agent_name,
-        )
-        # Return new manager for the cloned agent
-        new_config = MemoryManagerConfig(
-            base_path=self._config.base_path,
-            content_path=self._config.content_path,
-            vector_path=self._config.vector_path,
-            default_agent_id=new_agent_id,
-            default_agent_name=new_agent_name,
-        )
-        return MemoryManager(config=new_config)

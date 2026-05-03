@@ -101,15 +101,6 @@ class MarkdownContentStore:
             logger.debug(f"Archived shard {shard_id}")
         return dst_path
 
-    def unarchive_shard(self, shard_id: str) -> Path:
-        """Restore a shard from archive."""
-        src_path = self._archive_dir / f"{shard_id}.md"
-        dst_path = self._shards_dir / f"{shard_id}.md"
-        if src_path.exists():
-            shutil.move(str(src_path), str(dst_path))
-            logger.debug(f"Unarchived shard {shard_id}")
-        return dst_path
-
     def shard_exists(self, shard_id: str) -> bool:
         """Check if shard file exists."""
         return (self._shards_dir / f"{shard_id}.md").exists()
@@ -120,62 +111,6 @@ class MarkdownContentStore:
             f.stem for f in self._shards_dir.glob("*.md")
             if f.is_file()
         ]
-
-    # ------------------------------------------------------------------
-    # Chunk Aggregate Operations
-    # ------------------------------------------------------------------
-
-    def write_chunk_aggregate(
-        self,
-        chunk_id: str,
-        chunk_name: str,
-        shards: list[tuple[str, str]],  # [(shard_id, content), ...]
-        description: str = "",
-    ) -> Path:
-        """
-        Write a chunk's aggregate Markdown file containing all its shards.
-
-        Useful for human browsing and backup.
-        """
-        file_path = self._chunks_dir / f"{chunk_id}.md"
-        formatted = self._format_chunk(chunk_id, chunk_name, shards, description)
-        with file_path.open("w", encoding="utf-8") as f:
-            f.write(formatted)
-        logger.debug(f"Wrote chunk aggregate {chunk_id} with {len(shards)} shards")
-        return file_path
-
-    def read_chunk_aggregate(self, chunk_id: str) -> str:
-        """Read a chunk's aggregate Markdown file."""
-        file_path = self._chunks_dir / f"{chunk_id}.md"
-        if not file_path.exists():
-            return ""
-        return file_path.read_text(encoding="utf-8")
-
-    def delete_chunk_aggregate(self, chunk_id: str) -> None:
-        """Delete a chunk's aggregate file."""
-        file_path = self._chunks_dir / f"{chunk_id}.md"
-        if file_path.exists():
-            file_path.unlink()
-            logger.debug(f"Deleted chunk aggregate {chunk_id}")
-
-    # ------------------------------------------------------------------
-    # Cluster Index Operations
-    # ------------------------------------------------------------------
-
-    def write_cluster_index(
-        self,
-        cluster_id: str,
-        cluster_name: str,
-        chunk_ids: list[str],
-        description: str = "",
-    ) -> Path:
-        """Write a cluster's index Markdown file."""
-        file_path = self._clusters_dir / f"{cluster_id}.md"
-        formatted = self._format_cluster(cluster_id, cluster_name, chunk_ids, description)
-        with file_path.open("w", encoding="utf-8") as f:
-            f.write(formatted)
-        logger.debug(f"Wrote cluster index {cluster_id}")
-        return file_path
 
     # ------------------------------------------------------------------
     # Keyword Search (Grep-like)
@@ -195,36 +130,6 @@ class MarkdownContentStore:
             content = file_path.read_text(encoding="utf-8").lower()
             if query_lower in content:
                 matches.append(file_path.stem)
-            if len(matches) >= limit:
-                break
-        return matches
-
-    def search_with_context(
-        self,
-        query: str,
-        context_chars: int = 100,
-        limit: int = 20,
-    ) -> list[tuple[str, str]]:
-        """
-        Search shards with surrounding context.
-
-        Returns [(shard_id, context_snippet), ...].
-        """
-        query_lower = query.lower()
-        matches = []
-        for file_path in self._shards_dir.glob("*.md"):
-            if not file_path.is_file():
-                continue
-            content = file_path.read_text(encoding="utf-8")
-            content_lower = content.lower()
-
-            pos = content_lower.find(query_lower)
-            if pos >= 0:
-                # Get context around match
-                start = max(0, pos - context_chars // 2)
-                end = min(len(content), pos + len(query) + context_chars // 2)
-                context = content[start:end]
-                matches.append((file_path.stem, context))
             if len(matches) >= limit:
                 break
         return matches

@@ -16,7 +16,6 @@ from mindbot.memory.types import (
     MemoryCluster,
     MemoryProfile,
     ShardIndex,
-    ShardSource,
     ShardType,
 )
 
@@ -61,8 +60,8 @@ class TestMarkdownContentStore:
         temp_store.delete_shard(shard_id)
         assert not temp_store.shard_exists(shard_id)
 
-    def test_archive_and_unarchive(self, temp_store: MarkdownContentStore) -> None:
-        """Test archiving and unarchiving a shard."""
+    def test_archive_shard(self, temp_store: MarkdownContentStore) -> None:
+        """Test archiving a shard."""
         shard_id = "to-archive"
         temp_store.write_shard(shard_id, "content")
 
@@ -70,10 +69,6 @@ class TestMarkdownContentStore:
         archive_path = temp_store.archive_shard(shard_id)
         assert not temp_store.shard_exists(shard_id)
         assert archive_path.exists()
-
-        # Unarchive
-        restore_path = temp_store.unarchive_shard(shard_id)
-        assert temp_store.shard_exists(shard_id)
 
     def test_search_by_keyword(self, temp_store: MarkdownContentStore) -> None:
         """Test keyword search."""
@@ -86,32 +81,13 @@ class TestMarkdownContentStore:
         assert "shard-1" in matches
         assert "shard-3" in matches
 
-    def test_write_chunk_aggregate(self, temp_store: MarkdownContentStore) -> None:
-        """Test writing chunk aggregate."""
-        shards = [
-            ("shard-1", "First shard content"),
-            ("shard-2", "Second shard content"),
-        ]
-        path = temp_store.write_chunk_aggregate(
-            chunk_id="chunk-001",
-            chunk_name="TestChunk",
-            shards=shards,
-        )
-        assert path.exists()
-
-        content = temp_store.read_chunk_aggregate("chunk-001")
-        assert "First shard content" in content
-        assert "Second shard content" in content
-
     def test_get_stats(self, temp_store: MarkdownContentStore) -> None:
         """Test statistics."""
         temp_store.write_shard("s1", "content 1")
         temp_store.write_shard("s2", "content 2")
-        temp_store.write_chunk_aggregate("c1", "Chunk", [("s1", "content")])
 
         stats = temp_store.get_stats()
         assert stats["shards"] == 2
-        assert stats["chunks"] == 1
 
 
 class TestJSONIndexStore:
