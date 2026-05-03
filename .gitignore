@@ -65,3 +65,6 @@ IFLOW.md
 # 第三方库
 lib/
 .pytest_cache/
+
+# 知识文档wiki
+wiki/
