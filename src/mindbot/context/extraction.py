@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from mindbot.context.models import Message
-from mindbot.utils import run_sync
 from mindbot.logging import logger
 
 if TYPE_CHECKING:
@@ -41,7 +40,7 @@ class KeyInfoExtractor:
     def __init__(self, llm: ProviderAdapter) -> None:
         self._llm = llm
 
-    def extract(self, messages: list[Message]) -> Message:
+    async def extract(self, messages: list[Message]) -> Message:
         """Return a system message containing the extracted key information."""
         conversation = "\n".join(
             f"[{m.role}]: {m.text[:300]}"
@@ -51,8 +50,8 @@ class KeyInfoExtractor:
         prompt = _EXTRACT_PROMPT.format(conversation=conversation)
 
         try:
-            response = run_sync(
-                self._llm.chat([Message(role="user", content=prompt)])
+            response = await self._llm.chat(
+                [Message(role="user", content=prompt)]
             )
             return Message(
                 role="system",

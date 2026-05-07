@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -23,6 +24,7 @@ from mindbot.memory.types import (
     ForgetReport,
     MemoryChunk,
     MemoryCluster,
+    MemoryHit,
     MemoryProfile,
     MemoryShard,
     ShardIndex,
@@ -154,6 +156,8 @@ class MemoryManager:
             enable_vector=memory_config.vector.enabled,
             vector_dimension=memory_config.vector.dimension,
             embedder_model=memory_config.vector.embedder_model,
+            embedder_base_url=memory_config.vector.embedder_base_url,
+            embedder_api_key=memory_config.vector.embedder_api_key,
         )
         manager = cls(config=config)
 
@@ -430,68 +434,84 @@ class MemoryManager:
     # Read Operations (API Compatible)
     # ------------------------------------------------------------------
 
-    def search(
+    async def recall(
         self,
         query: str,
         top_k: int = 5,
-        source: str | None = None,  # Legacy: ignored
-    ) -> list[MemoryShard]:
+        cluster_type: str | None = None,
+    ) -> list[MemoryHit]:
+        """Hybrid recall returning explainable :class:`MemoryHit` objects.
+
+        This is the single entrypoint for memory retrieval after the
+        Memory Recall refactor.  It always runs the full vector + FTS +
+        grep + index + recency pipeline when a retriever is available;
+        otherwise it falls back to a keyword-only search executed in a
+        worker thread so we never block the event loop.
         """
-        Search memory using hybrid retrieval (vector + keyword + FTS).
+        if self._retriever is not None:
+            return await self._retriever.recall(
+                query, top_k=top_k, cluster_type=cluster_type,
+            )
+        return await asyncio.to_thread(self._keyword_recall_sync, query, top_k)
 
-        API compatible with old implementation.
+    def _keyword_recall_sync(self, query: str, top_k: int = 5) -> list[MemoryHit]:
+        """Synchronous keyword-only fallback returning :class:`MemoryHit`.
+
+        Used when the hybrid retriever is unavailable (no vector layer).
+        Exposed only via :meth:`recall`'s ``asyncio.to_thread`` path so
+        the public surface stays async.
         """
-        # Use hybrid retriever if available
-        if self._retriever:
-            return self._retriever.search_sync(query, top_k=top_k)
-
-        # Fallback: keyword-only search
-        return self._keyword_search(query, top_k=top_k)
-
-    def _keyword_search(self, query: str, top_k: int = 5) -> list[MemoryShard]:
-        """Fallback keyword-only search."""
         matching_ids = self._content_store.search_by_keyword(query, limit=top_k * 3)
 
-        scored_indices: list[tuple[float, ShardIndex]] = []
+        scored: list[tuple[float, ShardIndex, float, float]] = []
+        # tuple: (combined_score, index, grep_signal, recency_signal)
         for shard_id in matching_ids:
             index = self._index_store.get_shard_index(shard_id)
-            if index:
-                score = 0.0
-                if query.lower() in index.summary.lower():
-                    score += 3.0
-                if index.keywords:
-                    for kw in index.keywords:
-                        if kw.lower() in query.lower():
-                            score += 1.5
-                hours = max((time.time() - index.created_at) / 3600.0, 0.0)
-                score += 1.0 / (1.0 + hours / 24.0)
-                scored_indices.append((score, index))
+            if index is None:
+                continue
+            grep_signal = 0.0
+            if query.lower() in index.summary.lower():
+                grep_signal += 3.0
+            if index.keywords:
+                for kw in index.keywords:
+                    if kw.lower() in query.lower():
+                        grep_signal += 1.5
+            hours = max((time.time() - index.created_at) / 3600.0, 0.0)
+            recency_signal = 1.0 / (1.0 + hours / 24.0)
+            combined = grep_signal + recency_signal
+            scored.append((combined, index, grep_signal, recency_signal))
 
-        scored_indices.sort(key=lambda x: x[0], reverse=True)
+        scored.sort(key=lambda item: item[0], reverse=True)
 
-        shards = []
-        for score, index in scored_indices[:top_k]:
+        hits: list[MemoryHit] = []
+        for combined, index, grep_signal, recency_signal in scored[:top_k]:
             content = self._content_store.read_shard(index.shard_id)
-            if content:
-                index.touch()
-                self._index_store.update_shard_index(index.shard_id, index)
-                shards.append(MemoryShard(
-                    id=index.shard_id,
-                    text=content,
-                    shard_type=index.shard_type,
-                    source=index.source,
-                    cluster_id=index.cluster_id,
-                    chunk_id=index.chunk_id,
-                    created_at=index.created_at,
-                    updated_at=index.updated_at,
-                    access_count=index.access_count,
-                    forget_score=index.forget_score,
-                    is_archived=index.is_archived,
-                    is_permanent=index.is_permanent,
-                    metadata=index.metadata,
-                ))
-
-        return shards
+            if not content:
+                continue
+            index.touch()
+            self._index_store.update_shard_index(index.shard_id, index)
+            shard = MemoryShard(
+                id=index.shard_id,
+                text=content,
+                shard_type=index.shard_type,
+                source=index.source,
+                cluster_id=index.cluster_id,
+                chunk_id=index.chunk_id,
+                created_at=index.created_at,
+                updated_at=index.updated_at,
+                access_count=index.access_count,
+                forget_score=index.forget_score,
+                is_archived=index.is_archived,
+                is_permanent=index.is_permanent,
+                metadata=index.metadata,
+            )
+            hits.append(MemoryHit(
+                shard=shard,
+                score=combined,
+                grep_score=grep_signal,
+                recency_score=recency_signal,
+            ))
+        return hits
 
     def get_shard(self, shard_id: str) -> MemoryShard | None:
         """Get a specific shard by ID."""
@@ -649,20 +669,6 @@ class MemoryManager:
             "chunk_id": chunk_id,
             "cluster_id": cluster_id,
         })
-
-    # ------------------------------------------------------------------
-    # Async API (for full hybrid search with vector)
-    # ------------------------------------------------------------------
-
-    async def search_async(
-        self,
-        query: str,
-        top_k: int = 5,
-    ) -> list[MemoryShard]:
-        """Async search using full hybrid retrieval (vector + FTS + keyword)."""
-        if self._retriever:
-            return await self._retriever.search(query, top_k=top_k)
-        return self._keyword_search(query, top_k=top_k)
 
     # ------------------------------------------------------------------
     # Migration Operations (New API)

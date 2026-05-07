@@ -90,9 +90,18 @@ class OpenAIProvider(Provider):
     # ------------------------------------------------------------------
 
     def _to_openai_messages(self, messages: list[Message]) -> list[dict[str, Any]]:
-        """Convert internal ``Message`` list to the OpenAI API dict format."""
+        """Convert internal ``Message`` list to the OpenAI API dict format.
+
+        Some providers (e.g. GLM) require *all* system messages at the
+        beginning of the array.  We hoist system-role messages to the
+        front while preserving the relative order within each group.
+        """
+        system_msgs = [m for m in messages if m.role == "system"]
+        other_msgs = [m for m in messages if m.role != "system"]
+        ordered = system_msgs + other_msgs
+
         result: list[dict[str, Any]] = []
-        for msg in messages:
+        for msg in ordered:
             d: dict[str, Any] = {"role": msg.role}
 
             if isinstance(msg.content, str):

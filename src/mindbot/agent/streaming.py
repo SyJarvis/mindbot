@@ -32,25 +32,20 @@ class StreamingExecutor:
         tools: list[Any] | None = None,
         **llm_kwargs: Any,
     ) -> ChatResponse:
-        """收集所有 chunk 后返回完整 ChatResponse（非流式接口，供 TurnEngine.run 使用）。
+        """流式收集所有 chunk 后返回完整 ChatResponse（供 TurnEngine.run 使用）。
 
-        当有 tools 时优先使用非流式 chat()，确保 function calling 兼容性。
-        许多模型（GLM、Qwen 等）在流式模式下不返回结构化 tool_call deltas。
+        始终通过 chat_stream 逐 token 输出，同时在流结束后从
+        last_chat_response 中提取 tool_calls。
         """
         try:
             if on_event:
                 on_event(AgentEvent.thinking())
 
-            # 有 tools 时使用非流式，保证 function calling 正确解析
-            if tools:
-                response = await self._llm.chat(messages, tools=tools, **llm_kwargs)
-                if response.content and on_event:
-                    on_event(AgentEvent.delta(response.content))
-                return response
-
-            # 无 tools 时用流式，逐 token 输出
+            tool_calls_out: list[Any] = []
             content_parts: list[str] = []
-            async for chunk in self._llm.chat_stream(messages, tools=None, **llm_kwargs):
+            async for chunk in self._llm.chat_stream(
+                messages, tools=tools, tool_calls_out=tool_calls_out, **llm_kwargs,
+            ):
                 if chunk:
                     content_parts.append(chunk)
                     if on_event:
@@ -58,8 +53,8 @@ class StreamingExecutor:
 
             return ChatResponse(
                 content="".join(content_parts),
-                tool_calls=None,
-                finish_reason="stop",
+                tool_calls=tool_calls_out or None,
+                finish_reason="tool_calls" if tool_calls_out else "stop",
             )
 
         except Exception as e:

@@ -257,14 +257,8 @@ def _format_context_status(
 ) -> str:
     """Format context usage string for toolbar line 2."""
     pct = context_usage * 100
-    if context_tokens and max_context_tokens:
-        def _fmt_tokens(n: int) -> str:
-            if n >= 1000:
-                return f"{n / 1000:.1f}k"
-            return str(n)
-        return f"context: {pct:.1f}% ({_fmt_tokens(context_tokens)}/{_fmt_tokens(max_context_tokens)})"
-    if context_usage > 0:
-        return f"context: {pct:.1f}%"
+    if max_context_tokens > 0:
+        return f"Context: {pct:.1f}% ({context_tokens:,}/{max_context_tokens:,} tokens)"
     return ""
 
 

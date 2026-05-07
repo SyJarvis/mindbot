@@ -227,9 +227,33 @@ class MindAgent:
         else:
             self._main_agent.memory.append_to_short_term(content)
 
-    def search_memory(self, query: str, top_k: int = 5) -> list[Any]:
-        """Search the main agent's memory."""
-        return self._main_agent.memory.search(query, top_k=top_k)
+    # ------------------------------------------------------------------
+    # Context management (delegated to main agent)
+    # ------------------------------------------------------------------
+
+    def clear_context(self, session_id: str = "default") -> None:
+        """Clear all context for *session_id*."""
+        self._main_agent.clear_context(session_id)
+
+    async def compact_context(self, session_id: str = "default") -> int:
+        """Force compress the conversation block for *session_id*.
+
+        Returns:
+            Token count after compaction.
+        """
+        return await self._main_agent.compact_context(session_id)
+
+    def get_conversation_token_count(self, session_id: str = "default") -> int:
+        """Return the conversation block token count for *session_id*."""
+        return self._main_agent.get_conversation_token_count(session_id)
+
+    async def search_memory(self, query: str, top_k: int = 5) -> list[Any]:
+        """Recall memory hits via the main agent's memory manager.
+
+        Returns a list of :class:`~mindbot.memory.types.MemoryHit` objects
+        carrying both the shard and the per-source retrieval scores.
+        """
+        return await self._main_agent.memory.recall(query, top_k=top_k)
 
     # ------------------------------------------------------------------
     # Deprecated compatibility shims – kept for one release cycle

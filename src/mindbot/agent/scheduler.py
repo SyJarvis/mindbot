@@ -12,7 +12,6 @@ from typing import TYPE_CHECKING
 from mindbot.agent.input_builder import InputBuilder
 from mindbot.context.manager import ContextManager
 from mindbot.context.models import Message, MessageContent
-from mindbot.logging import logger
 
 if TYPE_CHECKING:
     from mindbot.config.schema import SkillsConfig
@@ -30,7 +29,7 @@ class Scheduler:
 
     Lifecycle per turn::
 
-        messages = scheduler.build_messages(user_input_text)
+        messages = await scheduler.build_messages(user_input_text)
         response = await llm.chat(messages)
         # persistence is now handled by PersistenceWriter, not Scheduler
     """
@@ -63,7 +62,7 @@ class Scheduler:
     # Build (delegated to InputBuilder)
     # ------------------------------------------------------------------
 
-    def build_messages(
+    async def build_messages(
         self,
         user_input: str | MessageContent,
         *,
@@ -74,13 +73,13 @@ class Scheduler:
 
         Delegates to :meth:`InputBuilder.build`.
         """
-        return self._input_builder.build(
+        return await self._input_builder.build(
             user_input,
             session_id=session_id,
             intent_state=intent_state,
         )
 
-    def build(
+    async def build(
         self,
         user_input: str | MessageContent,
         *,
@@ -88,13 +87,13 @@ class Scheduler:
         intent_state: str | None = None,
     ) -> list[Message]:
         """Alias for :meth:`build_messages`."""
-        return self._input_builder.build(
+        return await self._input_builder.build(
             user_input,
             session_id=session_id,
             intent_state=intent_state,
         )
 
-    def assemble(
+    async def assemble(
         self,
         user_input: str | MessageContent,
         *,
@@ -102,7 +101,7 @@ class Scheduler:
         intent_state: str | None = None,
     ) -> list[Message]:
         """Compatibility wrapper around :meth:`build_messages`."""
-        return self._input_builder.build(
+        return await self._input_builder.build(
             user_input,
             session_id=session_id,
             intent_state=intent_state,

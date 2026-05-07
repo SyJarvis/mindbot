@@ -411,6 +411,8 @@ class VectorMemoryConfig(BaseModel):
     # Embedder settings
     embedder_type: str = "openai"           # openai | qwen3 (future)
     embedder_model: str = "text-embedding-3-small"
+    embedder_base_url: str = "http://localhost:11434"
+    embedder_api_key: str = "EMPTY"
 
     # Update thresholds
     merge_threshold: float = Field(default=0.85, ge=0.0, le=1.0)
@@ -517,13 +519,16 @@ class ContextCompressionConfig(BaseModel):
 
     recent_keep: int = Field(default=4, ge=1)
     extract_threshold: int = Field(default=2, ge=0)
+    compact_trigger_ratio: float = Field(default=0.8, ge=0.5, lt=1.0)
+    compact_target_ratio: float = Field(default=0.4, ge=0.1, lt=1.0)
+    max_summary_tokens: int = Field(default=800, ge=100)
 
 
 class ContextConfig(BaseModel):
     """Context window management."""
 
     max_tokens: int = Field(default=8000, ge=1)
-    compression: str = "truncate"
+    compression: str = "summarize"
     blocks: ContextBlocksConfig = Field(default_factory=ContextBlocksConfig)
     compression_config: ContextCompressionConfig = Field(
         default_factory=ContextCompressionConfig,

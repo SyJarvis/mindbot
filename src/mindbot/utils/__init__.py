@@ -31,19 +31,33 @@ def get_logger(name: str) -> Any:
 
 
 # ---------------------------------------------------------------------------
-# Token counting (simple estimation – swap in tiktoken later)
+# Token counting (tiktoken with word-heuristic fallback)
 # ---------------------------------------------------------------------------
 
 _WORD_RE = re.compile(r"\S+")
 
+_encoding = None
+
+
+def _get_encoding():
+    global _encoding
+    if _encoding is None:
+        try:
+            import tiktoken
+            _encoding = tiktoken.get_encoding("cl100k_base")
+        except Exception:
+            _encoding = False
+    return _encoding if _encoding is not False else None
+
 
 def estimate_tokens(text: str) -> int:
-    """Rough token estimate: ~1 token per 0.75 words (English heuristic).
+    """Accurate token count via tiktoken (cl100k_base).
 
-    For CJK text each character is ~1 token; for English ~4 chars per token.
-    This is intentionally cheap – callers needing accuracy should use tiktoken.
+    Falls back to a word-count heuristic if tiktoken is unavailable.
     """
-    # Heuristic: count words, multiply by 1.3 for sub-word pieces.
+    enc = _get_encoding()
+    if enc is not None:
+        return max(1, len(enc.encode(text)))
     words = _WORD_RE.findall(text)
     return max(1, int(len(words) * 1.3))
 

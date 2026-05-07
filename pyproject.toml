@@ -33,6 +33,7 @@ dependencies = [
     "pyarrow>=21.0",
     # Optional: sentence-transformers for local embedding
     # "sentence-transformers>=2.0",
+    "tiktoken>=0.12.0",
 ]
 
 [project.scripts]
