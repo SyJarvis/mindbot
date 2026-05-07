@@ -180,14 +180,19 @@ class Shell:
         """获取当前状态快照，供状态栏渲染。"""
         workspace = str(self.shell_ctx.workspace) if self.shell_ctx else "."
         responding = self._chat_task is not None and not self._chat_task.done()
+
+        context_tokens = self.bot.get_conversation_token_count(self.session_id)
+        max_context_tokens = self.bot.config.context.max_tokens
+        context_usage = context_tokens / max_context_tokens if max_context_tokens > 0 else 0.0
+
         return StatusSnapshot(
             model_name=self.bot.model,
             workspace=workspace,
             session_id=self.session_id,
             thinking=responding,
-            context_usage=getattr(self.bot, "context_usage", 0.0),
-            context_tokens=getattr(self.bot, "context_tokens", 0),
-            max_context_tokens=getattr(self.bot, "max_context_tokens", 0),
+            context_usage=context_usage,
+            context_tokens=context_tokens,
+            max_context_tokens=max_context_tokens,
         )
 
 

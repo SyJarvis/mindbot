@@ -10,14 +10,10 @@ import pytest
 
 # Import directly from memory subpackage (bypass mindbot.__init__)
 from mindbot.memory import (
-    ChunkType,
     ClusterType,
-    ForgetPolicy,
     ForgetReport,
     MemoryManager,
     MemoryManagerConfig,
-    MemoryShard,
-    ShardSource,
     ShardType,
 )
 
@@ -65,34 +61,32 @@ class TestMemoryManager:
         assert shard.text == "User likes dark mode"
         assert shard.shard_type == ShardType.PREFERENCE
 
-    def test_search_returns_results(self, temp_manager: MemoryManager) -> None:
-        """Test search returns matching shards."""
+    async def test_recall_returns_results(self, temp_manager: MemoryManager) -> None:
+        """recall() returns matching :class:`MemoryHit` objects."""
         temp_manager.append_to_short_term("User mentioned Python programming")
         temp_manager.promote_to_long_term("Python is useful for data science")
 
-        results = temp_manager.search("Python")
-        assert len(results) > 0
+        hits = await temp_manager.recall("Python")
+        assert len(hits) > 0
 
-        # Check that results have full content
-        for shard in results:
-            assert shard.text != ""
-            assert "Python" in shard.text
+        for hit in hits:
+            assert hit.shard.text != ""
+            assert "Python" in hit.shard.text
+            assert hit.score > 0
 
-    def test_search_updates_access_count(self, temp_manager: MemoryManager) -> None:
-        """Test search updates access statistics."""
+    async def test_recall_updates_access_count(self, temp_manager: MemoryManager) -> None:
+        """Recalling the same shard twice increases its access count."""
         temp_manager.promote_to_long_term("Test knowledge about Python")
 
-        # First search
-        results = temp_manager.search("Python")
-        assert len(results) > 0
-        shard_id = results[0].id
-        initial_count = results[0].access_count
+        hits = await temp_manager.recall("Python")
+        assert len(hits) > 0
+        shard_id = hits[0].shard.id
+        initial_count = hits[0].shard.access_count
 
-        # Second search should increase count
-        results2 = temp_manager.search("Python")
-        matching = [s for s in results2 if s.id == shard_id]
+        hits2 = await temp_manager.recall("Python")
+        matching = [h for h in hits2 if h.shard.id == shard_id]
         if matching:
-            assert matching[0].access_count > initial_count
+            assert matching[0].shard.access_count > initial_count
 
     def test_get_shard(self, temp_manager: MemoryManager) -> None:
         """Test getting specific shard."""
@@ -166,14 +160,12 @@ class TestMemoryManagerCompatibility:
             )
             yield MemoryManager(config=config)
 
-    def test_search_signature(self, temp_manager: MemoryManager) -> None:
-        """Test search method signature is compatible."""
-        # Old signature: search(query, top_k=5, source=None)
-        results = temp_manager.search("test query", top_k=3)
+    async def test_recall_signature(self, temp_manager: MemoryManager) -> None:
+        """recall() takes (query, top_k, cluster_type) and returns a list."""
+        results = await temp_manager.recall("test query", top_k=3)
         assert isinstance(results, list)
 
-        # source parameter is ignored but accepted
-        results2 = temp_manager.search("test", top_k=5, source="short_term")
+        results2 = await temp_manager.recall("test", top_k=5, cluster_type=None)
         assert isinstance(results2, list)
 
     def test_append_to_short_term_returns_list(self, temp_manager: MemoryManager) -> None:

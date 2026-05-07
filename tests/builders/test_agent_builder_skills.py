@@ -34,7 +34,7 @@ class FakeLLM:
         return self
 
 
-def test_create_agent_wires_skill_registry_into_input_builder(tmp_path: Path) -> None:
+async def test_create_agent_wires_skill_registry_into_input_builder(tmp_path: Path) -> None:
     skill_root = tmp_path / "skills"
     skill_dir = skill_root / "python-helper"
     skill_dir.mkdir(parents=True)
@@ -71,7 +71,9 @@ def test_create_agent_wires_skill_registry_into_input_builder(tmp_path: Path) ->
         enable_dynamic_tools=False,
     )
 
-    messages = agent._get_session_input_builder("skill-session").build("Need help with Python functions")
+    messages = await agent._get_session_input_builder("skill-session").build(
+        "Need help with Python functions",
+    )
 
     assert messages[0].role == "system"
     assert "Available skills:" in messages[0].content

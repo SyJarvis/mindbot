@@ -1,4 +1,19 @@
-"""Context manager – block-based context window with per-block token budgets."""
+"""Context manager – block-based context state container.
+
+The manager stores per-block messages exactly as they were written.  It
+no longer enforces per-block token budgets at write time: that decision
+has moved to :class:`~mindbot.context.packer.ContextPacker`, which
+packs candidate items into the actual prompt for each turn.
+
+What this class *does* still own:
+
+* The canonical block layout and ordering.
+* Soft per-block budgets (``ContextBlock.max_tokens``) used as hints by
+  the packer and surfaced for observability.
+* A safety-net compaction on the conversation block that fires when the
+  buffered history would exceed the *total* context budget, so the
+  in-memory session state stays bounded across long sessions.
+"""
 
 from __future__ import annotations
 
@@ -8,7 +23,7 @@ from typing import Any
 
 from mindbot.config.schema import ContextConfig
 from mindbot.context.checkpoint import Checkpoint
-from mindbot.context.compression import CompressionStrategy, TruncateStrategy
+from mindbot.context.compression import CompressionStrategy, TruncateStrategy, get_strategy
 from mindbot.context.models import Message, MessageRole
 from mindbot.utils import estimate_tokens
 from mindbot.logging import logger
@@ -88,6 +103,7 @@ class ContextManager:
         *,
         max_tokens: int = 8000,
         strategy: CompressionStrategy | None = None,
+        llm: Any | None = None,
     ) -> None:
         if config is not None:
             self._config = config
@@ -99,13 +115,23 @@ class ContextManager:
         if strategy is not None:
             self._strategy: CompressionStrategy = strategy
         else:
-            if self._config.compression != "truncate":
-                logger.warning(
-                    f"Unsupported compression strategy {self._config.compression!r} "
-                    "on unified main path; falling back to truncate"
+            try:
+                self._strategy = get_strategy(
+                    self._config.compression,
+                    llm=llm,
+                    recent_keep=self._config.compression_config.recent_keep,
+                    extract_threshold=self._config.compression_config.extract_threshold,
+                    max_summary_tokens=self._config.compression_config.max_summary_tokens,
                 )
-            self._strategy = TruncateStrategy()
+            except (ValueError, TypeError):
+                logger.warning(
+                    "Cannot create strategy %r (missing dependencies); "
+                    "falling back to truncate",
+                    self._config.compression,
+                )
+                self._strategy = TruncateStrategy()
 
+        self._needs_compaction: bool = False
         self._checkpoints: dict[str, Checkpoint] = {}
 
         budgets = _resolve_block_budgets(self._config)
@@ -211,17 +237,16 @@ class ContextManager:
     # ------------------------------------------------------------------
 
     def set_memory_messages(self, messages: list[Message]) -> None:
-        """Replace the memory block contents (called by Scheduler)."""
-        block = self._blocks["memory"]
-        kept: list[Message] = []
-        total = 0
+        """Replace the memory block contents (called by Scheduler).
+
+        All messages are stored verbatim.  The packer is responsible
+        for fitting memory into the per-turn token budget; truncating
+        at the manager level would prevent the packer from keeping a
+        compressed subset later.
+        """
         for msg in messages:
             self._ensure_token_count(msg)
-            if total + msg.token_count > block.max_tokens:
-                break
-            kept.append(msg)
-            total += msg.token_count
-        block.messages = kept
+        self._blocks["memory"].messages = list(messages)
 
     # ------------------------------------------------------------------
     # Conversation block
@@ -313,21 +338,58 @@ class ContextManager:
     # ------------------------------------------------------------------
 
     def _check_and_compact(self) -> None:
-        conv = self._blocks["conversation"]
-        if conv.token_count > conv.max_tokens:
-            logger.info(
-                "Conversation block budget exceeded (%d > %d) – compacting",
-                conv.token_count,
-                conv.max_tokens,
-            )
-            self.compact()
+        """Check whether the conversation block needs compaction.
 
-    def compact(self) -> None:
-        """Compress the conversation block using the configured strategy."""
+        Sets an internal flag so that actual (potentially async) compression
+        is deferred to :meth:`maybe_compact`, which should be called before
+        the next LLM turn.
+        """
         conv = self._blocks["conversation"]
-        conv.messages = self._strategy.compress(conv.messages, conv.max_tokens)
+        trigger = self.max_tokens * self._config.compression_config.compact_trigger_ratio
+        if conv.token_count > trigger:
+            logger.info(
+                "Conversation buffer exceeded trigger line (%d > %.0f) – scheduled for compaction",
+                conv.token_count,
+                trigger,
+            )
+            self._needs_compaction = True
+
+    async def maybe_compact(self) -> int | None:
+        """Run pending compaction if the flag was set.
+
+        Called by the async build path (:class:`~mindbot.agent.input_builder.InputBuilder`)
+        before assembling the next LLM prompt.
+
+        Returns:
+            Token count after compaction, or ``None`` if no compaction was needed.
+        """
+        if not self._needs_compaction:
+            return None
+        self._needs_compaction = False
+        return await self.compact()
+
+    async def compact(self) -> int:
+        """Compress the conversation block to the target ratio.
+
+        Uses the configured compression strategy (e.g. ``SummarizeStrategy``),
+        falling back to :class:`TruncateStrategy` on failure.
+
+        Returns:
+            Token count of the conversation block after compaction.
+        """
+        conv = self._blocks["conversation"]
+        before = conv.token_count
+        target = int(self.max_tokens * self._config.compression_config.compact_target_ratio)
+        try:
+            conv.messages = await self._strategy.compress(conv.messages, target)
+        except Exception:
+            logger.warning("Strategy %r failed; falling back to truncate", type(self._strategy).__name__)
+            conv.messages = await TruncateStrategy().compress(conv.messages, target)
         for m in conv.messages:
             m.token_count = estimate_tokens(m.text)
+        after = conv.token_count
+        logger.info("Compacted conversation: %d → %d tokens", before, after)
+        return after
 
     # ------------------------------------------------------------------
     # Assembly (ordered block output)
@@ -349,18 +411,18 @@ class ContextManager:
     # ------------------------------------------------------------------
 
     def prepare_for_llm(self) -> list[Message]:
-        """Utility: compress and return messages in canonical order.
+        """Utility: return messages in canonical order.
 
         .. note::
 
             The main chain uses :class:`~mindbot.agent.input_builder.InputBuilder`
-            to assemble the final prompt.  This method is kept as a convenience
-            for backward-compatible callers and tests.
+            to assemble the final prompt, which calls :meth:`maybe_compact`
+            asynchronously before packing.  This method does **not** trigger
+            compaction — it only returns the current state.
 
         Returns:
-            List of messages ready for LLM consumption.
+            List of messages in assembly order.
         """
-        self._check_and_compact()
         return self.messages
 
     # ------------------------------------------------------------------
@@ -417,21 +479,11 @@ class ContextManager:
             msg.token_count = estimate_tokens(msg.text)
 
     def _set_single_message_block(self, block_name: str, message: Message) -> None:
-        block = self._blocks[block_name]
-        if message.token_count > block.max_tokens:
-            truncated = Message(role=message.role, content=message.content)
-            truncated.tool_calls = message.tool_calls
-            truncated.reasoning_content = message.reasoning_content
-            truncated.tool_call_id = message.tool_call_id
-            text = message.text
-            while text:
-                text = text[:-1]
-                truncated.content = text
-                truncated.token_count = estimate_tokens(truncated.text)
-                if truncated.token_count <= block.max_tokens:
-                    block.messages = [truncated]
-                    return
-            block.messages = []
-            return
+        """Replace a single-message block.
 
-        block.messages = [message]
+        Stores the message verbatim.  Per-block token budgets are now
+        honoured by :class:`~mindbot.context.packer.ContextPacker` at
+        prompt-assembly time, not by the state container.
+        """
+        self._ensure_token_count(message)
+        self._blocks[block_name].messages = [message]

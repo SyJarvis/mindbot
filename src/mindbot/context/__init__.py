@@ -6,6 +6,13 @@ from mindbot.context.compression import (
     TruncateStrategy,
     get_strategy,
 )
+from mindbot.context.items import (
+    CacheScope,
+    ContextItem,
+    ContextPackResult,
+    ItemSource,
+    PackedItem,
+)
 from mindbot.context.manager import ContextBlock, ContextManager
 from mindbot.context.models import (
     ChatResponse,
@@ -20,18 +27,26 @@ from mindbot.context.models import (
     ToolResult,
     UsageInfo,
 )
+from mindbot.context.packer import ContextPacker, PackerConfig
 
 __all__ = [
+    "CacheScope",
     "ChatResponse",
     "Checkpoint",
     "CompressionStrategy",
     "ContextBlock",
+    "ContextItem",
     "ContextManager",
+    "ContextPackResult",
+    "ContextPacker",
     "FinishReason",
     "ImagePart",
+    "ItemSource",
     "Message",
     "MessageContent",
     "MessageRole",
+    "PackedItem",
+    "PackerConfig",
     "ProviderInfo",
     "TextPart",
     "ToolCall",

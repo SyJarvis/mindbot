@@ -361,9 +361,34 @@ class MindBot:
         """Add to memory."""
         self._agent.add_to_memory(content, permanent)
 
-    def search_memory(self, query: str, top_k: int = 5) -> list[Any]:
-        """Search memory."""
-        return self._agent.search_memory(query, top_k)
+    async def search_memory(self, query: str, top_k: int = 5) -> list[Any]:
+        """Recall memory hits via the underlying agent.
+
+        Returns a list of :class:`~mindbot.memory.types.MemoryHit` so
+        callers can inspect retrieval signals; await is required because
+        recall now runs the full hybrid retriever (vector + FTS + …).
+        """
+        return await self._agent.search_memory(query, top_k)
+
+    # ==================================================================
+    # Context Management Interfaces
+    # ==================================================================
+
+    def clear_context(self, session_id: str = "default") -> None:
+        """Clear all context for a session."""
+        self._agent.clear_context(session_id)
+
+    async def compact_context(self, session_id: str = "default") -> int:
+        """Force compress the conversation block for a session.
+
+        Returns:
+            Token count after compaction.
+        """
+        return await self._agent.compact_context(session_id)
+
+    def get_conversation_token_count(self, session_id: str = "default") -> int:
+        """Return the conversation block token count for a session."""
+        return self._agent.get_conversation_token_count(session_id)
 
     # ==================================================================
     # Tool Interfaces

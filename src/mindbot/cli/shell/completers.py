@@ -60,4 +60,7 @@ def get_default_slash_commands() -> list[SlashCommand]:
         SlashCommand("status", description="Show bot status"),
         SlashCommand("config", description="Real-time config commands"),
         SlashCommand("theme", description="Switch theme (dark/light)"),
+        SlashCommand("skill", description="List or invoke skills"),
+        SlashCommand("clear", description="Clear all conversation context"),
+        SlashCommand("compact", description="Force compress conversation context"),
     ]

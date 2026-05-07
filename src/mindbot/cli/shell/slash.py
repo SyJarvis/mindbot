@@ -42,6 +42,10 @@ async def handle_slash_command(cmd: str, bot: Any, shell_ctx: Any = None) -> Non
         cmd_config(args)
     elif command == "/theme":
         cmd_theme(args)
+    elif command == "/clear":
+        cmd_clear(bot)
+    elif command == "/compact":
+        await cmd_compact(bot)
     else:
         console.print(f"[yellow]Unknown command: {command}[/yellow]")
         console.print("[dim]Type /help for available commands[/dim]")
@@ -128,6 +132,8 @@ _SLASH_COMMANDS = [
     ("/status", "Show bot status"),
     ("/config", "Real-time config commands"),
     ("/theme", "Switch theme (dark/light)"),
+    ("/clear", "Clear all conversation context"),
+    ("/compact", "Force compress conversation context"),
     ("exit / quit / bye", "Exit the shell"),
 ]
 
@@ -430,3 +436,29 @@ User request: {query}"""
             console.print("[dim]The skill instructions have been loaded.[/dim]")
     except Exception as e:
         console.print(f"[red]Error invoking skill: {e}[/red]")
+
+
+# ---------------------------------------------------------------------------
+# /clear — 清空上下文
+# ---------------------------------------------------------------------------
+
+def cmd_clear(bot: Any) -> None:
+    """清空当前会话的所有上下文。"""
+    bot.clear_context()
+    console.print("[green]✓ Context cleared[/green]")
+
+
+# ---------------------------------------------------------------------------
+# /compact — 手动触发压缩
+# ---------------------------------------------------------------------------
+
+async def cmd_compact(bot: Any) -> None:
+    """手动触发对话上下文压缩。"""
+    before = bot.get_conversation_token_count()
+    after = await bot.compact_context()
+    if before == 0:
+        console.print("[dim]Nothing to compact (conversation is empty)[/dim]")
+        return
+    saved = before - after
+    pct = (saved / before * 100) if before > 0 else 0
+    console.print(f"[green]✓ Compacted: {before} → {after} tokens ({pct:.0f}% saved)[/green]")

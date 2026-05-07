@@ -49,6 +49,7 @@ plan/
 coverage/
 
 # 测试文件
+.cache/
 
 # AI 助手配置
 /.agent
@@ -68,3 +69,18 @@ lib/
 
 # 知识文档wiki
 wiki/
+
+# 临时数据文件
+alpaca_gpt4_data_zh.json
+demo.json
+demo.txt
+turns.jsonl
+
+# 外部项目
+MindLM/
+
+# 杂项临时文件
+llm-wiki.md
+prompt.md
+sub_agents.py
+context-compression-improvement.md

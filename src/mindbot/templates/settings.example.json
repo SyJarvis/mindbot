@@ -124,7 +124,7 @@
     }
   },
   "context": {
-    "compression": "truncate"
+    "compression": "rolling_summarize"
   },
   "session_journal": {
     "enabled": true,

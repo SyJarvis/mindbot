@@ -1,4 +1,21 @@
-"""Hybrid retriever - combines vector search with keyword/FTS search."""
+"""Hybrid retriever – semantic recall over MindBot's memory store.
+
+The retriever combines five signals to score every candidate shard:
+
+1. Vector similarity (LanceDB cosine), seeded from a query embedding.
+2. Full-text search (LanceDB FTS over the indexed text column).
+3. Markdown grep over the on-disk content store.
+4. JSON-index keyword match (against ``ShardIndex.summary`` / keywords).
+5. Recency bonus that decays with shard age.
+
+Each signal contributes to a per-shard :class:`MemoryHit` so callers
+(``InputBuilder``, ``ContextPacker``) can reason about *why* a shard
+was retrieved – not just its overall score.
+
+The previous synchronous, keyword-only ``search_sync`` entrypoint was
+intentionally removed when the cognitive workspace migration moved
+``InputBuilder`` to async; ``recall`` is now the single entrypoint.
+"""
 
 from __future__ import annotations
 
@@ -8,13 +25,12 @@ from mindbot.memory.embedder.base import Embedder
 from mindbot.memory.storage.content_store import MarkdownContentStore
 from mindbot.memory.storage.index_store import JSONIndexStore
 from mindbot.memory.storage.vector_store import VectorStore
-from mindbot.memory.types import MemoryShard
+from mindbot.memory.types import MemoryHit, MemoryShard
 from mindbot.logging import logger
 
 
-
 class HybridRetriever:
-    """Hybrid retrieval: vector similarity + keyword FTS + recency scoring."""
+    """Hybrid recall: vector similarity + keyword/FTS + recency scoring."""
 
     def __init__(
         self,
@@ -34,27 +50,32 @@ class HybridRetriever:
         self._keyword_weight = keyword_weight
         self._recency_weight = recency_weight
 
-    async def search(
+    async def recall(
         self,
         query: str,
         top_k: int = 5,
         cluster_type: str | None = None,
-        chunk_type: str | None = None,
-    ) -> list[MemoryShard]:
-        """
-        Hybrid search combining vector, keyword, and recency signals.
+    ) -> list[MemoryHit]:
+        """Hybrid recall returning explainable :class:`MemoryHit` objects.
 
-        Returns full MemoryShard objects with text loaded from Markdown.
+        Each hit carries the contribution of every signal so downstream
+        salience scoring can weigh, e.g., "vector + recency" vs
+        "keyword grep only".
         """
-        # Build filter expression
         filter_expr = None
         if cluster_type:
             filter_expr = f'cluster_id = "{cluster_type}"'
 
-        # Collect candidates from all sources
-        candidates: dict[str, float] = {}  # shard_id → combined score
+        hits: dict[str, MemoryHit] = {}
 
-        # 1. Vector search (if embedder available)
+        def _bucket(shard_id: str) -> MemoryHit:
+            existing = hits.get(shard_id)
+            if existing is None:
+                existing = MemoryHit(shard=MemoryShard(id=shard_id, text=""))
+                hits[shard_id] = existing
+            return existing
+
+        # 1. Vector search (skipped when embedder is unavailable).
         if self._embedder:
             try:
                 vector = await self._embedder.encode(query)
@@ -62,106 +83,84 @@ class HybridRetriever:
                     vector, top_k=top_k * 3, filter_expr=filter_expr,
                 )
                 for result in vector_results:
-                    score = result.score * self._vector_weight
-                    candidates[result.shard_id] = candidates.get(result.shard_id, 0.0) + score
-            except Exception as e:
-                logger.debug(f"Vector search failed: {e}")
+                    hit = _bucket(result.shard_id)
+                    score = float(result.score)
+                    if score > hit.vector_score:
+                        hit.score += (score - hit.vector_score) * self._vector_weight
+                        hit.vector_score = score
+            except Exception as exc:
+                logger.debug("Vector recall failed: {}", exc)
 
-        # 2. FTS keyword search (via LanceDB)
+        # 2. FTS keyword search (LanceDB built-in).
         try:
             fts_results = self._vector_store.search_by_text(
                 query, top_k=top_k * 3, filter_expr=filter_expr,
             )
             for result in fts_results:
-                score = max(result.score, 0.1) * self._keyword_weight
-                candidates[result.shard_id] = candidates.get(result.shard_id, 0.0) + score
-        except Exception as e:
-            logger.debug(f"FTS search failed: {e}")
+                hit = _bucket(result.shard_id)
+                fts = max(float(result.score), 0.1)
+                if fts > hit.fts_score:
+                    hit.score += (fts - hit.fts_score) * self._keyword_weight
+                    hit.fts_score = fts
+        except Exception as exc:
+            logger.debug("FTS recall failed: {}", exc)
 
-        # 3. Markdown keyword search (fallback / supplement)
+        # 3. Markdown grep fallback.
         md_matches = self._content_store.search_by_keyword(query, limit=top_k * 3)
+        grep_value = 0.3
         for shard_id in md_matches:
-            score = 0.3 * self._keyword_weight  # Lower weight for basic grep
-            candidates[shard_id] = candidates.get(shard_id, 0.0) + score
+            hit = _bucket(shard_id)
+            if hit.grep_score < grep_value:
+                hit.score += (grep_value - hit.grep_score) * self._keyword_weight
+                hit.grep_score = grep_value
 
-        # 4. JSON index summary match
+        # 4. JSON-index keyword summary match.
         indices = self._index_store.search_indices_by_keywords(
             query.split(), limit=top_k * 3,
         )
+        index_value = 0.2
         for idx in indices:
-            score = 0.2 * self._keyword_weight
-            candidates[idx.shard_id] = candidates.get(idx.shard_id, 0.0) + score
+            hit = _bucket(idx.shard_id)
+            if hit.index_score < index_value:
+                hit.score += (index_value - hit.index_score) * self._keyword_weight
+                hit.index_score = index_value
 
-        # 5. Add recency bonus
+        # 5. Recency bonus.
         now = time.time()
-        for shard_id in list(candidates.keys()):
+        for shard_id, hit in hits.items():
             index = self._index_store.get_shard_index(shard_id)
-            if index:
-                hours = max((now - index.created_at) / 3600.0, 0.0)
-                recency = 1.0 / (1.0 + hours / 24.0)
-                candidates[shard_id] += recency * self._recency_weight
+            if index is None:
+                continue
+            hours = max((now - index.created_at) / 3600.0, 0.0)
+            recency = 1.0 / (1.0 + hours / 24.0)
+            hit.recency_score = recency
+            hit.score += recency * self._recency_weight
 
-        # Sort by combined score
-        sorted_ids = sorted(candidates.keys(), key=lambda x: candidates[x], reverse=True)
-
-        # Load full content and build MemoryShard objects
-        shards = []
+        # Sort by combined score, take top_k, hydrate full shard text.
+        sorted_ids = sorted(hits.keys(), key=lambda sid: hits[sid].score, reverse=True)
+        result: list[MemoryHit] = []
         for shard_id in sorted_ids[:top_k]:
+            hit = hits[shard_id]
             shard = self._load_shard(shard_id)
-            if shard:
-                shards.append(shard)
+            if shard is None:
+                continue
+            hit.shard = shard
+            result.append(hit)
 
-        logger.debug(f"Hybrid search '{query[:30]}' returned {len(shards)} shards")
-        return shards
+        logger.debug(
+            "memory.recall query={} hits={} top={}",
+            query[:30],
+            len(result),
+            ",".join(f"{h.shard_id[:8]}:{h.score:.2f}" for h in result[:3]),
+        )
+        return result
 
-    def search_sync(
-        self,
-        query: str,
-        top_k: int = 5,
-    ) -> list[MemoryShard]:
-        """Synchronous hybrid search (keyword-only, no vector)."""
-        candidates: dict[str, float] = {}
-
-        # FTS keyword search
-        try:
-            fts_results = self._vector_store.search_by_text(query, top_k=top_k * 3)
-            for result in fts_results:
-                score = max(result.score, 0.1)
-                candidates[result.shard_id] = candidates.get(result.shard_id, 0.0) + score
-        except Exception:
-            pass
-
-        # Markdown keyword search
-        md_matches = self._content_store.search_by_keyword(query, limit=top_k * 3)
-        for shard_id in md_matches:
-            candidates[shard_id] = candidates.get(shard_id, 0.0) + 0.5
-
-        # JSON index summary match
-        indices = self._index_store.search_indices_by_keywords(query.split(), limit=top_k * 3)
-        for idx in indices:
-            candidates[idx.shard_id] = candidates.get(idx.shard_id, 0.0) + 0.3
-
-        # Recency bonus
-        now = time.time()
-        for shard_id in list(candidates.keys()):
-            index = self._index_store.get_shard_index(shard_id)
-            if index:
-                hours = max((now - index.created_at) / 3600.0, 0.0)
-                recency = 1.0 / (1.0 + hours / 24.0)
-                candidates[shard_id] += recency * 0.2
-
-        # Sort and load
-        sorted_ids = sorted(candidates.keys(), key=lambda x: candidates[x], reverse=True)
-        shards = []
-        for shard_id in sorted_ids[:top_k]:
-            shard = self._load_shard(shard_id)
-            if shard:
-                shards.append(shard)
-
-        return shards
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
 
     def _load_shard(self, shard_id: str) -> MemoryShard | None:
-        """Load a full MemoryShard from index + content stores."""
+        """Hydrate a full :class:`MemoryShard` from index + content stores."""
         index = self._index_store.get_shard_index(shard_id)
         if not index:
             return None
@@ -170,7 +169,6 @@ class HybridRetriever:
         if not content:
             return None
 
-        # Update access stats
         index.touch()
         self._index_store.update_shard_index(shard_id, index)
 

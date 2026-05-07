@@ -225,7 +225,7 @@ class Agent:
             self._sessions.move_to_end(session_id)
             return self._sessions[session_id]
 
-        ctx = ContextManager(self._context_config)
+        ctx = ContextManager(self._context_config, llm=self.llm)
         self._sessions[session_id] = ctx
 
         if len(self._sessions) > self._max_sessions:
@@ -357,7 +357,7 @@ class Agent:
         )
 
         input_builder = self._get_session_input_builder(session_id)
-        messages = input_builder.build(message, session_id=session_id)
+        messages = await input_builder.build(message, session_id=session_id)
         user_timestamp = messages[-1].timestamp if messages and messages[-1].role == "user" else None
         logger.debug("_run_turn.context_built session={} messages={}", session_id, len(messages))
 
@@ -439,7 +439,7 @@ class Agent:
         set_log_context(session_id=session_id)
         turn_context = self._build_turn_context(tools)
         input_builder = self._get_session_input_builder(session_id)
-        messages = input_builder.build(message, session_id=session_id)
+        messages = await input_builder.build(message, session_id=session_id)
         user_timestamp = messages[-1].timestamp if messages and messages[-1].role == "user" else None
         turn_engine = self._get_turn_engine(session_id, turn_context)
 
@@ -464,6 +464,25 @@ class Agent:
             "chat_stream.finish agent={} session={} stop_reason={}",
             self.name, session_id, response.stop_reason,
         )
+
+    def clear_context(self, session_id: str = "default") -> None:
+        """Clear all context for *session_id*."""
+        ctx = self._get_session_context(session_id)
+        ctx.clear()
+
+    async def compact_context(self, session_id: str = "default") -> int:
+        """Force compress the conversation block for *session_id*.
+
+        Returns:
+            Token count after compaction.
+        """
+        ctx = self._get_session_context(session_id)
+        return await ctx.compact()
+
+    def get_conversation_token_count(self, session_id: str = "default") -> int:
+        """Return the conversation block token count for *session_id*."""
+        ctx = self._get_session_context(session_id)
+        return ctx.get_block("conversation").token_count
 
     # ------------------------------------------------------------------
     # Repr

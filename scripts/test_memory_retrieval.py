@@ -32,15 +32,15 @@ async def test_memory_indexing():
 
     # Search for something
     query = "毕业实习手册的材料装订顺序"
-    print(f"\nSearching for: {query}")
+    print(f"\nRecalling for: {query}")
 
-    results = memory.search(query, top_k=3, source="long_term")
-    print(f"Found {len(results)} results:")
+    hits = await memory.recall(query, top_k=3)
+    print(f"Found {len(hits)} hits:")
 
-    for i, chunk in enumerate(results, 1):
-        print(f"\n--- Result {i} ---")
+    for i, hit in enumerate(hits, 1):
+        chunk = hit.shard
+        print(f"\n--- Result {i} (score={hit.score:.3f} reason={hit.reason}) ---")
         print(f"Source: {chunk.source.value}")
-        print(f"File: {chunk.file_name}")
         print(f"Text preview: {chunk.text[:200]}...")
 
     memory.close()
@@ -69,7 +69,7 @@ async def test_input_builder():
     query = "毕业实习报告的格式要求有哪些？"
     print(f"\nBuilding input for query: {query}")
 
-    messages = builder.build(query)
+    messages = await builder.build(query)
     print(f"\nGenerated {len(messages)} messages")
 
     # Find memory block messages
@@ -108,21 +108,14 @@ async def test_retrieval_strategies():
     for query in queries:
         print(f"\nQuery: {query}")
 
-        # Search long-term
-        long_term = memory.search(query, top_k=2, source="long_term")
-        print(f"  Long-term: {len(long_term)} results")
-        for chunk in long_term:
-            print(f"    - {chunk.text[:80]}...")
-
-        # Search short-term
-        short_term = memory.search(query, top_k=2, source="short_term")
-        print(f"  Short-term: {len(short_term)} results")
-
-        # Search all
-        all_results = memory.search(query, top_k=2, source=None)
-        print(f"  All sources: {len(all_results)} results")
-        for chunk in all_results:
-            print(f"    - [{chunk.source.value}] {chunk.text[:80]}...")
+        hits = await memory.recall(query, top_k=3)
+        print(f"  Recalled: {len(hits)} hits")
+        for hit in hits:
+            chunk = hit.shard
+            print(
+                f"    - [{chunk.source.value}] score={hit.score:.3f}"
+                f" ({hit.reason}) :: {chunk.text[:80]}..."
+            )
 
     memory.close()
 

@@ -4,19 +4,20 @@ Covers:
 - assemble(): block ordering, memory injection, user_input placement
 - build_messages(): preferred builder entrypoint and intent_state placement
 - build(): alias for build_messages
+
+After the Memory Recall refactor every Scheduler build entrypoint is
+``async`` and the memory pipeline returns
+:class:`~mindbot.memory.types.MemoryHit` objects.
 """
 
 from __future__ import annotations
-
-from dataclasses import dataclass
-from typing import Any
 
 import pytest
 
 from mindbot.agent.scheduler import Scheduler
 from mindbot.config.schema import ContextConfig
 from mindbot.context.manager import ContextManager
-from mindbot.context.models import Message
+from mindbot.memory.types import MemoryHit, MemoryShard
 
 
 # ---------------------------------------------------------------------------
@@ -24,26 +25,30 @@ from mindbot.context.models import Message
 # ---------------------------------------------------------------------------
 
 
-@dataclass
-class FakeMemoryChunk:
-    text: str
-    id: str = "chunk-1"
+def _hit(text: str, *, shard_id: str = "c1", score: float = 0.5) -> MemoryHit:
+    return MemoryHit(
+        shard=MemoryShard(id=shard_id, text=text), score=score, vector_score=score,
+    )
 
 
 class FakeMemoryManager:
-    """In-memory stub satisfying the MemoryManager read interface."""
+    """In-memory stub satisfying the MemoryManager async interface."""
 
-    def __init__(self, chunks: list[FakeMemoryChunk] | None = None) -> None:
-        self._chunks = chunks or []
+    def __init__(self, hits: list[MemoryHit] | None = None) -> None:
+        self._hits = hits or []
 
-    def search(self, query: str, top_k: int = 5, source: str | None = None) -> list[FakeMemoryChunk]:
-        return self._chunks[:top_k]
+    async def recall(
+        self, query: str, top_k: int = 5, cluster_type: str | None = None,
+    ) -> list[MemoryHit]:
+        return self._hits[:top_k]
 
 
 class FailingMemoryManager(FakeMemoryManager):
-    """A MemoryManager whose search always raises."""
+    """A MemoryManager whose recall always raises."""
 
-    def search(self, query: str, top_k: int = 5, source: str | None = None) -> list[FakeMemoryChunk]:
+    async def recall(
+        self, query: str, top_k: int = 5, cluster_type: str | None = None,
+    ) -> list[MemoryHit]:
         raise RuntimeError("memory down")
 
 
@@ -58,10 +63,10 @@ def ctx() -> ContextManager:
 
 
 @pytest.fixture()
-def memory_with_chunks() -> FakeMemoryManager:
+def memory_with_hits() -> FakeMemoryManager:
     return FakeMemoryManager([
-        FakeMemoryChunk(text="User likes Python", id="c1"),
-        FakeMemoryChunk(text="Previous topic: testing", id="c2"),
+        _hit("User likes Python", shard_id="c1", score=0.9),
+        _hit("Previous topic: testing", shard_id="c2", score=0.6),
     ])
 
 
@@ -77,104 +82,111 @@ def empty_memory() -> FakeMemoryManager:
 
 class TestAssemble:
 
-    def test_basic_assembly_returns_user_message(self, ctx: ContextManager) -> None:
+    async def test_basic_assembly_returns_user_message(self, ctx: ContextManager) -> None:
         scheduler = Scheduler(context=ctx)
-        msgs = scheduler.assemble("hello")
+        msgs = await scheduler.assemble("hello")
 
         assert len(msgs) == 1
         assert msgs[-1].role == "user"
         assert msgs[-1].content == "hello"
 
-    def test_block_order_system_memory_conversation_user(
-        self, ctx: ContextManager, memory_with_chunks: FakeMemoryManager,
+    async def test_block_order_system_memory_conversation_user(
+        self, ctx: ContextManager, memory_with_hits: FakeMemoryManager,
     ) -> None:
         ctx.set_system_identity("You are a helpful assistant.")
         ctx.add_conversation_message("user", "earlier question")
         ctx.add_conversation_message("assistant", "earlier answer")
 
-        scheduler = Scheduler(context=ctx, memory=memory_with_chunks)
-        msgs = scheduler.assemble("new question")
+        scheduler = Scheduler(context=ctx, memory=memory_with_hits)
+        msgs = await scheduler.assemble("new question")
 
         roles = [m.role for m in msgs]
+        # system_identity, two memory shards, conversation user/assistant, new user.
         assert roles[0] == "system"                # system_identity
-        assert roles[1] == "system"                # memory block
-        assert roles[2] == "user"                  # conversation: earlier question
-        assert roles[3] == "assistant"             # conversation: earlier answer
+        assert roles[1] == "system"                # memory shard 1
+        assert roles[2] == "system"                # memory shard 2
+        assert roles[3] == "user"                  # conversation: earlier question
+        assert roles[4] == "assistant"             # conversation: earlier answer
         assert roles[-1] == "user"                 # user_input: new question
         assert msgs[-1].content == "new question"
 
-    def test_memory_block_populated_from_manager(
-        self, ctx: ContextManager, memory_with_chunks: FakeMemoryManager,
+    async def test_memory_block_populated_from_manager(
+        self, ctx: ContextManager, memory_with_hits: FakeMemoryManager,
     ) -> None:
-        scheduler = Scheduler(context=ctx, memory=memory_with_chunks)
-        msgs = scheduler.assemble("search query")
+        scheduler = Scheduler(context=ctx, memory=memory_with_hits)
+        await scheduler.assemble("search query")
 
         memory_msgs = ctx.get_block("memory").messages
         assert len(memory_msgs) == 1
         assert "User likes Python" in memory_msgs[0].content
         assert "Previous topic: testing" in memory_msgs[0].content
 
-    def test_memory_block_empty_when_no_manager(self, ctx: ContextManager) -> None:
+    async def test_memory_block_empty_when_no_manager(self, ctx: ContextManager) -> None:
         scheduler = Scheduler(context=ctx, memory=None)
-        scheduler.assemble("hello")
+        await scheduler.assemble("hello")
         assert ctx.get_block("memory").messages == []
 
-    def test_memory_block_empty_when_no_results(
+    async def test_memory_block_empty_when_no_results(
         self, ctx: ContextManager, empty_memory: FakeMemoryManager,
     ) -> None:
         scheduler = Scheduler(context=ctx, memory=empty_memory)
-        scheduler.assemble("hello")
+        await scheduler.assemble("hello")
         assert ctx.get_block("memory").messages == []
 
-    def test_memory_search_failure_is_graceful(self, ctx: ContextManager) -> None:
+    async def test_memory_recall_failure_is_graceful(self, ctx: ContextManager) -> None:
         scheduler = Scheduler(context=ctx, memory=FailingMemoryManager())
-        msgs = scheduler.assemble("hello")
+        msgs = await scheduler.assemble("hello")
 
         assert ctx.get_block("memory").messages == []
         assert len(msgs) >= 1
 
-    def test_memory_top_k_respected(self, ctx: ContextManager) -> None:
-        many_chunks = FakeMemoryManager([
-            FakeMemoryChunk(text=f"fact-{i}", id=f"c{i}") for i in range(10)
+    async def test_memory_top_k_respected(self, ctx: ContextManager) -> None:
+        many_hits = FakeMemoryManager([
+            _hit(f"fact-{i}", shard_id=f"c{i}", score=1.0 - i * 0.05)
+            for i in range(10)
         ])
-        scheduler = Scheduler(context=ctx, memory=many_chunks, memory_top_k=3)
-        scheduler.assemble("hello")
+        scheduler = Scheduler(context=ctx, memory=many_hits, memory_top_k=3)
+        await scheduler.assemble("hello")
 
         mem_content = ctx.get_block("memory").messages[0].content
         assert mem_content.count("- fact-") == 3
 
-    def test_system_prompt_sets_identity(self, ctx: ContextManager) -> None:
+    async def test_system_prompt_sets_identity(self, ctx: ContextManager) -> None:
         scheduler = Scheduler(context=ctx, system_prompt="I am a bot.")
-        msgs = scheduler.assemble("hello")
+        msgs = await scheduler.assemble("hello")
 
         assert msgs[0].role == "system"
         assert msgs[0].content == "I am a bot."
 
-    def test_user_input_block_cleared_between_calls(self, ctx: ContextManager) -> None:
+    async def test_user_input_block_cleared_between_calls(self, ctx: ContextManager) -> None:
         scheduler = Scheduler(context=ctx)
 
-        scheduler.assemble("first")
+        await scheduler.assemble("first")
         assert ctx.get_block("user_input").messages[0].content == "first"
 
-        scheduler.assemble("second")
+        await scheduler.assemble("second")
         assert len(ctx.get_block("user_input").messages) == 1
         assert ctx.get_block("user_input").messages[0].content == "second"
 
-    def test_build_messages_includes_intent_state_before_user_input(self, ctx: ContextManager) -> None:
+    async def test_build_messages_includes_intent_state_before_user_input(
+        self, ctx: ContextManager,
+    ) -> None:
         scheduler = Scheduler(context=ctx)
         ctx.set_system_identity("You are a helpful assistant.")
         ctx.add_conversation_message("user", "earlier question")
 
-        msgs = scheduler.build_messages("new question", intent_state="User wants a concise answer.")
+        msgs = await scheduler.build_messages(
+            "new question", intent_state="User wants a concise answer.",
+        )
 
         assert [msg.role for msg in msgs] == ["system", "user", "system", "user"]
         assert msgs[-2].content == "User wants a concise answer."
         assert msgs[-1].content == "new question"
         assert ctx.get_block("intent_state").messages[0].content == "User wants a concise answer."
 
-    def test_build_is_alias_of_build_messages(self, ctx: ContextManager) -> None:
+    async def test_build_is_alias_of_build_messages(self, ctx: ContextManager) -> None:
         scheduler = Scheduler(context=ctx)
-        msgs = scheduler.build("hello")
+        msgs = await scheduler.build("hello")
 
         assert len(msgs) == 1
         assert msgs[0].content == "hello"
@@ -187,15 +199,17 @@ class TestAssemble:
 
 class TestFullCycle:
 
-    def test_assemble_after_manual_history_reflects_conversation(self, ctx: ContextManager) -> None:
+    async def test_assemble_after_manual_history_reflects_conversation(
+        self, ctx: ContextManager,
+    ) -> None:
         scheduler = Scheduler(context=ctx)
 
-        scheduler.assemble("q1")
+        await scheduler.assemble("q1")
         ctx.add_conversation_message("user", "q1")
         ctx.add_conversation_message("assistant", "a1")
         ctx.clear_user_input()
 
-        msgs = scheduler.assemble("q2")
+        msgs = await scheduler.assemble("q2")
         contents = [m.content for m in msgs]
         assert "q1" in contents
         assert "a1" in contents

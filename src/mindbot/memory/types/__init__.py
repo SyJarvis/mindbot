@@ -14,6 +14,7 @@ from mindbot.memory.types.enums import (
     ShardType,
 )
 from mindbot.memory.types.forget import ForgetPolicy, ForgetReport
+from mindbot.memory.types.hit import MemoryHit
 from mindbot.memory.types.index import ShardIndex
 from mindbot.memory.types.profile import MemoryProfile
 from mindbot.memory.types.shard import MemoryShard
@@ -33,6 +34,7 @@ __all__ = [
     "ShardIndex",
     "ForgetPolicy",
     "ForgetReport",
+    "MemoryHit",
     # Constants
     "CLUSTER_MIGRATION_PRIORITY",
     "CORE_CLUSTER_TYPES",
