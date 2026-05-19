@@ -17,6 +17,11 @@
           ]
         }
       ]
+    },
+    "openai": {
+      "type": "openai",
+      "base_url": "https://api.openai.com/v1",
+      "api_key": ""
     }
   },
   "agent": {
@@ -81,9 +86,8 @@
       "enabled": true,
       "backend": "lancedb",
       "persist_path": "~/.mindbot/vectors",
-      "dimension": 512,
-      "embedder_type": "openai",
-      "embedder_model": "text-embedding-3-small",
+      "dimension": 1536,
+      "embedding_model": "openai/text-embedding-3-small",
       "merge_threshold": 0.85,
       "correct_threshold": 0.90,
       "forget_threshold": 0.70,

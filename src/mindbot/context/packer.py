@@ -94,7 +94,11 @@ class ContextPacker:
         reserve = (
             response_reserve if response_reserve is not None else self._config.response_reserve
         )
-        budget = max(0, total_budget - reserve)
+        # Ensure at least some budget for required items (user message, etc).
+        # When total_budget is too small, shrink reserve rather than starving the prompt.
+        if reserve >= total_budget:
+            reserve = max(0, total_budget // 4)
+        budget = total_budget - reserve
 
         non_empty = [it for it in items if not it.is_empty]
 

@@ -365,10 +365,23 @@ class OllamaProvider(Provider):
                     if tool_calls_data:
                         for i, tc in enumerate(tool_calls_data):
                             fn = tc.get("function", {})
+                            # Ollama may return ``arguments`` either as a
+                            # JSON string (OpenAI-compatible) or as a dict
+                            # (native format).  Mirror the tolerance from
+                            # ``_parse_response`` instead of hard-failing
+                            # on dicts via ``json.loads``.
+                            raw_args = fn.get("arguments", {})
+                            if isinstance(raw_args, str):
+                                try:
+                                    raw_args = json.loads(raw_args or "{}")
+                                except json.JSONDecodeError:
+                                    raw_args = {}
+                            elif not isinstance(raw_args, dict):
+                                raw_args = {}
                             tool_calls_out.append(ToolCall(
                                 id=tc.get("id", f"call_{i}"),
                                 name=fn.get("name", ""),
-                                arguments=json.loads(fn.get("arguments", "{}")),
+                                arguments=raw_args,
                             ))
 
     async def embed(self, texts: list[str], **kwargs: Any) -> list[list[float]]:

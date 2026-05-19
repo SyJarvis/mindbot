@@ -197,6 +197,79 @@ class TestOllamaProviderChatStream:
             # 绑定工具后仍然走流式
             assert len(chunks) > 0
 
+    @pytest.mark.asyncio
+    async def test_chat_stream_tool_calls_dict_arguments(
+        self, mock_httpx_client: MagicMock, sample_text_message: Message
+    ) -> None:
+        """Ollama 原生协议下 ``arguments`` 是 dict，不应再被 ``json.loads`` 触发 TypeError。"""
+
+        async def mock_stream_lines():
+            yield (
+                '{"message": {"content": "", "tool_calls": ['
+                '{"function": {"name": "get_runtime_info", "arguments": {}}}'
+                ']}}'
+            )
+            yield '{"done": true}'
+
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+        mock_response.aiter_lines = mock_stream_lines
+
+        mock_cm = MagicMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_cm.__aexit__ = AsyncMock(return_value=False)
+        mock_httpx_client.stream = MagicMock(return_value=mock_cm)
+
+        param = OllamaProviderParam(model="qwen3:1.7b")
+        with patch("httpx.AsyncClient", return_value=mock_httpx_client):
+            provider = OllamaProvider(param)
+            tool_calls_out: list = []
+            chunks: list[str] = []
+            async for chunk in provider.chat_stream(
+                [sample_text_message], tool_calls_out=tool_calls_out
+            ):
+                chunks.append(chunk)
+
+            assert len(tool_calls_out) == 1
+            tc = tool_calls_out[0]
+            assert tc.name == "get_runtime_info"
+            assert tc.arguments == {}
+
+    @pytest.mark.asyncio
+    async def test_chat_stream_tool_calls_string_arguments(
+        self, mock_httpx_client: MagicMock, sample_text_message: Message
+    ) -> None:
+        """OpenAI 兼容协议下 ``arguments`` 是 JSON 字符串，应被解析为 dict。"""
+
+        async def mock_stream_lines():
+            yield (
+                '{"message": {"content": "", "tool_calls": ['
+                '{"function": {"name": "echo", "arguments": "{\\"text\\": \\"hi\\"}"}}'
+                ']}}'
+            )
+            yield '{"done": true}'
+
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+        mock_response.aiter_lines = mock_stream_lines
+
+        mock_cm = MagicMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_cm.__aexit__ = AsyncMock(return_value=False)
+        mock_httpx_client.stream = MagicMock(return_value=mock_cm)
+
+        param = OllamaProviderParam(model="qwen3:1.7b")
+        with patch("httpx.AsyncClient", return_value=mock_httpx_client):
+            provider = OllamaProvider(param)
+            tool_calls_out: list = []
+            async for _ in provider.chat_stream(
+                [sample_text_message], tool_calls_out=tool_calls_out
+            ):
+                pass
+
+            assert len(tool_calls_out) == 1
+            assert tool_calls_out[0].arguments == {"text": "hi"}
+
 
 class TestOllamaProviderEmbed:
     """Test OllamaProvider.embed method."""

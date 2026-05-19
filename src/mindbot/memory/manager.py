@@ -32,6 +32,7 @@ from mindbot.memory.types import (
     ShardType,
 )
 from mindbot.memory.migration.package import MigrationPackage
+from mindbot.providers.embeddings.base import Embedder
 from mindbot.logging import logger
 
 
@@ -50,11 +51,6 @@ class MemoryManagerConfig:
     enable_vector: bool = True
     vector_dimension: int = 1536
 
-    # Embedder settings (OpenAI-compatible)
-    embedder_model: str = "text-embedding-3-small"
-    embedder_base_url: str | None = None
-    embedder_api_key: str | None = None
-
 
 class MemoryManager:
     """
@@ -68,7 +64,12 @@ class MemoryManager:
     - LanceDB: vector storage + FTS (LanceVectorStore)
     """
 
-    def __init__(self, config: MemoryManagerConfig | None = None) -> None:
+    def __init__(
+        self,
+        config: MemoryManagerConfig | None = None,
+        *,
+        embedder: Embedder | None = None,
+    ) -> None:
         self._config = config or MemoryManagerConfig()
 
         # Initialize stores
@@ -78,7 +79,7 @@ class MemoryManager:
 
         # Initialize vector store (optional)
         self._vector_store = None
-        self._embedder = None
+        self._embedder: Embedder | None = embedder
         self._retriever = None
 
         if self._config.enable_vector:
@@ -140,13 +141,33 @@ class MemoryManager:
         return cls(config=config)
 
     @classmethod
-    def from_schema_config(cls, memory_config: Any) -> MemoryManager:
-        """
-        Create MemoryManager from config.schema.MemoryConfig.
+    def from_schema_config(
+        cls, config_or_memory: Any, *, embedder: Embedder | None = None,
+    ) -> MemoryManager:
+        """Create MemoryManager from a MindBot configuration.
+
+        Accepts either the root :class:`mindbot.config.schema.Config` (so
+        the embedder can be constructed from declared providers) or the
+        nested :class:`mindbot.config.schema.MemoryConfig` for callers
+        that do not have access to the root configuration.
 
         Args:
-            memory_config: MemoryConfig from schema.py
+            config_or_memory: Either a root ``Config`` or a ``MemoryConfig``.
+                When a ``MemoryConfig`` is provided, ``embedder`` must be
+                supplied (or vector layer must be disabled) because we do
+                not have the surrounding provider declarations.
+            embedder: Optional pre-built embedder.  When ``None`` and a
+                root ``Config`` is provided, the builder constructs one
+                from ``memory.vector.embedding_model`` and ``providers``.
         """
+        # Accept both Config and MemoryConfig for backward compatibility
+        if hasattr(config_or_memory, "memory"):
+            root_config = config_or_memory
+            memory_config = config_or_memory.memory
+        else:
+            root_config = None
+            memory_config = config_or_memory
+
         config = MemoryManagerConfig(
             base_path=memory_config.base_path,
             content_path=memory_config.content_path,
@@ -155,11 +176,21 @@ class MemoryManager:
             default_agent_name=memory_config.default_agent_name,
             enable_vector=memory_config.vector.enabled,
             vector_dimension=memory_config.vector.dimension,
-            embedder_model=memory_config.vector.embedder_model,
-            embedder_base_url=memory_config.vector.embedder_base_url,
-            embedder_api_key=memory_config.vector.embedder_api_key,
         )
-        manager = cls(config=config)
+
+        if embedder is None and config.enable_vector and root_config is not None:
+            from mindbot.builders.embedder_builder import create_embedder
+
+            try:
+                embedder = create_embedder(root_config)
+            except Exception as exc:
+                logger.warning(
+                    "Failed to create embedder from config "
+                    "(vector layer will fall back to keyword-only): {}",
+                    exc,
+                )
+
+        manager = cls(config=config, embedder=embedder)
 
         # Apply forget policy from config
         if hasattr(memory_config, 'forget_policy'):
@@ -180,22 +211,35 @@ class MemoryManager:
         return manager
 
     def _init_vector_layer(self) -> None:
-        """Initialize LanceDB vector store, embedder, and hybrid retriever."""
+        """Initialize LanceDB vector store and hybrid retriever.
+
+        The embedder is no longer constructed here – callers inject one
+        through :meth:`__init__` (typically via :meth:`from_schema_config`
+        which delegates to :func:`mindbot.builders.create_embedder`).
+        When no embedder is supplied the vector store still loads but
+        recall degrades to keyword/FTS-only signals.
+        """
         try:
-            from mindbot.memory.embedder.openai_embedder import OpenAIEmbedder
             from mindbot.memory.retrieval.searcher import HybridRetriever
             from mindbot.memory.storage.lance_store import LanceVectorStore
 
+            dimension = self._config.vector_dimension
+            if self._embedder is not None:
+                embedder_dim = self._embedder.dimension
+                if embedder_dim != dimension:
+                    logger.warning(
+                        "embedder.dimension={} differs from "
+                        "memory.vector.dimension={}; using embedder value "
+                        "to stay consistent with LanceDB table schema",
+                        embedder_dim,
+                        dimension,
+                    )
+                    dimension = embedder_dim
+                    self._config.vector_dimension = embedder_dim
+
             self._vector_store = LanceVectorStore(
                 uri=self._config.vector_path,
-                dimension=self._config.vector_dimension,
-            )
-
-            self._embedder = OpenAIEmbedder(
-                model=self._config.embedder_model,
-                base_url=self._config.embedder_base_url,
-                api_key=self._config.embedder_api_key,
-                dimension=self._config.vector_dimension,
+                dimension=dimension,
             )
 
             self._retriever = HybridRetriever(
@@ -205,7 +249,11 @@ class MemoryManager:
                 embedder=self._embedder,
             )
 
-            logger.info(f"Vector layer initialized (LanceDB, dim={self._config.vector_dimension})")
+            logger.info(
+                "Vector layer initialized (LanceDB, dim={}, embedder={})",
+                dimension,
+                type(self._embedder).__name__ if self._embedder else "None",
+            )
         except Exception as e:
             logger.warning(f"Vector layer initialization failed, falling back to keyword-only: {e}")
             self._vector_store = None
