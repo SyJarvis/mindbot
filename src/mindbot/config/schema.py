@@ -408,11 +408,14 @@ class VectorMemoryConfig(BaseModel):
     persist_path: str = "~/.mindbot/vectors"
     dimension: int = Field(default=512, ge=64, le=4096)
 
-    # Embedder settings
-    embedder_type: str = "openai"           # openai | qwen3 (future)
-    embedder_model: str = "text-embedding-3-small"
-    embedder_base_url: str = "http://localhost:11434"
-    embedder_api_key: str = "EMPTY"
+    embedding_model: str = Field(
+        default="",
+        description=(
+            "Embedder reference in 'instance/model' form, e.g. "
+            "'openai/text-embedding-3-small'. The instance must be "
+            "declared under top-level 'providers'."
+        ),
+    )
 
     # Update thresholds
     merge_threshold: float = Field(default=0.85, ge=0.0, le=1.0)

@@ -21,7 +21,7 @@ from typing import Any
 
 import pytest
 
-from mindbot.memory.embedder.base import Embedder
+from mindbot.providers.embeddings.base import Embedder
 from mindbot.memory.retrieval.searcher import HybridRetriever
 from mindbot.memory.storage.vector_store import SearchResult, VectorStore
 from mindbot.memory.types import ShardIndex, ShardSource, ShardType

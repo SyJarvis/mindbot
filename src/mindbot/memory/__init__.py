@@ -13,9 +13,6 @@ from mindbot.memory.storage import (
     VectorStore,
 )
 
-# Embedder
-from mindbot.memory.embedder import Embedder, OpenAIEmbedder
-
 # Retrieval
 from mindbot.memory.retrieval import HybridRetriever
 
@@ -56,9 +53,6 @@ __all__ = [
     "LanceVectorStore",
     "VectorStore",
     "SearchResult",
-    # Embedder
-    "Embedder",
-    "OpenAIEmbedder",
     # Retrieval
     "HybridRetriever",
     # Data types

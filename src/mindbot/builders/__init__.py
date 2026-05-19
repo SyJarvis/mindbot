@@ -10,12 +10,14 @@ single, consistent object-construction path regardless of caller context.
 """
 
 from mindbot.builders.agent_builder import create_agent
+from mindbot.builders.embedder_builder import create_embedder
 from mindbot.builders.llm_builder import create_llm
 from mindbot.builders.model_ref import parse_model_ref
 from mindbot.builders.tool_builder import create_tool_registry
 
 __all__ = [
     "create_agent",
+    "create_embedder",
     "create_llm",
     "create_tool_registry",
     "parse_model_ref",

@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import time
 
-from mindbot.memory.embedder.base import Embedder
+from mindbot.providers.embeddings.base import Embedder
 from mindbot.memory.storage.content_store import MarkdownContentStore
 from mindbot.memory.storage.index_store import JSONIndexStore
 from mindbot.memory.storage.vector_store import VectorStore
