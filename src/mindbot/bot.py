@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import sys
 from collections.abc import AsyncIterator, Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -58,8 +57,15 @@ class MindBot:
 
         self._inject_system_prompt()
 
-        # Initialize agent
-        self._agent = MindAgent(self.config)
+        # Initialize agent (deferred: allow shell to start without valid LLM config)
+        self._agent: MindAgent | None = None
+        self._agent_error: str | None = None
+        try:
+            self._agent = MindAgent(self.config)
+        except Exception as e:
+            self._agent_error = str(e)
+            logger.warning("Agent initialization deferred: {}", e)
+            self._agent = None
 
         # Initialize Cron service
         cron_path = Path.home() / ".mindbot" / "cron" / "jobs.json"
@@ -67,7 +73,7 @@ class MindBot:
 
         # Initialize HealthMonitor if routing is enabled
         self._health_monitor: "HealthMonitor | None" = None
-        if self.config.routing.auto and self.config.routing.health_probe.enabled:
+        if self._agent is not None and self.config.routing.auto and self.config.routing.health_probe.enabled:
             from mindbot.routing.health import HealthMonitor
             from mindbot.routing.health import HealthProbeConfig
             from mindbot.routing.adapter import RoutingProviderAdapter
@@ -110,50 +116,44 @@ class MindBot:
 
     @staticmethod
     def _load_default_config() -> Config:
-        """Load default configuration from ~/.mindbot/settings.json.
-
-        Returns:
-            Config instance loaded from the default config file.
-
-        Raises:
-            SystemExit: If the config file doesn't exist.
+        """Load default configuration from ``~/.mindbot/settings.json``
+        if it exists, otherwise load from the built-in defaults.
         """
         root = Path.home() / ".mindbot"
         config_file = root / "settings.json"
 
-        if not config_file.exists():
-            print(
-                f"[Error] Configuration file not found in {root}\n\n"
-                "Please run the following command to initialize MindBot:\n"
-                "  mindbot generate-config\n\n"
-                "Then edit ~/.mindbot/settings.json to configure your providers.",
-                file=sys.stderr,
-            )
-            sys.exit(1)
-
-        return load_config(config_file)
+        if config_file.exists():
+            return load_config(config_file)
+        return load_config()
 
     def _inject_system_prompt(self) -> None:
-        """Read ``~/.mindbot/SYSTEM.md`` and set ``config.agent.system_prompt``.
+        """Set ``config.agent.system_prompt`` from ``~/.mindbot/SYSTEM.md``
+        if the user has created one, otherwise use the built-in default.
 
         This is the **sole** source of the system prompt at runtime.
         """
         system_file = Path.home() / ".mindbot" / "SYSTEM.md"
 
-        if not system_file.exists():
-            print(
-                f"[Error] System prompt file not found: {system_file}\n\n"
-                "Please run the following command to initialize MindBot:\n"
-                "  mindbot generate-config\n",
-                file=sys.stderr,
-            )
-            sys.exit(1)
+        if system_file.exists():
+            content = system_file.read_text(encoding="utf-8").strip()
+            self.config.agent.system_prompt = content
+            return
 
-        content = system_file.read_text(encoding="utf-8").strip()
-        if not content:
-            logger.warning("SYSTEM.md is empty — MindBot will run without a system prompt")
+        # No user SYSTEM.md — use built-in default
+        try:
+            from importlib import resources
+            default_prompt = resources.files("mindbot.templates").joinpath("SYSTEM.md").read_text(encoding="utf-8").strip()
+            self.config.agent.system_prompt = default_prompt
+        except Exception:
+            self.config.agent.system_prompt = ""
 
-        self.config.agent.system_prompt = content
+    def _require_agent(self) -> MindAgent:
+        """Return the agent, raising a clear error if LLM config is missing."""
+        if self._agent is not None:
+            return self._agent
+        msg = self._agent_error or "Agent not initialized"
+        raise RuntimeError(f"LLM not available: {msg}\n"
+                           "Configure ~/.mindbot/settings.json or set MIND_AGENT__MODEL")
 
     @classmethod
     def from_config(cls, config: Config) -> "MindBot":
@@ -190,6 +190,8 @@ class MindBot:
 
     def list_tools(self) -> list[Any]:
         """Return the tools currently registered on the main agent."""
+        if self._agent is None:
+            return []
         return self._agent.list_tools()
 
     # ==================================================================
@@ -236,7 +238,8 @@ class MindBot:
         # Rebuild the LLM adapter
         from mindbot.builders import create_llm
         new_llm = create_llm(self.config)
-        self._agent._main_agent.llm = new_llm
+        agent = self._require_agent()
+        agent._main_agent.llm = new_llm
 
     # ==================================================================
     # Chat Interfaces
@@ -265,7 +268,8 @@ class MindBot:
             events, and stop_reason.  Use ``response.content`` for the
             plain-text reply.
         """
-        return await self._agent.chat(
+        agent = self._require_agent()
+        return await agent.chat(
             message,
             session_id=session_id,
             tools=tools,
@@ -292,7 +296,8 @@ class MindBot:
         Yields:
             String chunks of the assistant response
         """
-        async for chunk in self._agent.chat_stream(message, session_id=session_id, tools=tools):
+        agent = self._require_agent()
+        async for chunk in agent.chat_stream(message, session_id=session_id, tools=tools):
             yield chunk
 
     # ------------------------------------------------------------------
@@ -332,10 +337,13 @@ class MindBot:
 
     def refresh_capabilities(self) -> None:
         """Refresh runtime-visible capabilities."""
-        self._agent.refresh_capabilities()
+        if self._agent is not None:
+            self._agent.refresh_capabilities()
 
     async def reload_tools(self) -> int:
         """Reload persisted tools and refresh the active capability graph."""
+        if self._agent is None:
+            return 0
         return await self._agent.reload_tools()
 
     async def chat_with_agent_async(
@@ -359,7 +367,8 @@ class MindBot:
 
     def add_to_memory(self, content: str, permanent: bool = False) -> None:
         """Add to memory."""
-        self._agent.add_to_memory(content, permanent)
+        if self._agent is not None:
+            self._agent.add_to_memory(content, permanent)
 
     async def search_memory(self, query: str, top_k: int = 5) -> list[Any]:
         """Recall memory hits via the underlying agent.
@@ -368,6 +377,8 @@ class MindBot:
         callers can inspect retrieval signals; await is required because
         recall now runs the full hybrid retriever (vector + FTS + …).
         """
+        if self._agent is None:
+            return []
         return await self._agent.search_memory(query, top_k)
 
     # ==================================================================
@@ -376,7 +387,8 @@ class MindBot:
 
     def clear_context(self, session_id: str = "default") -> None:
         """Clear all context for a session."""
-        self._agent.clear_context(session_id)
+        if self._agent is not None:
+            self._agent.clear_context(session_id)
 
     async def compact_context(self, session_id: str = "default") -> int:
         """Force compress the conversation block for a session.
@@ -384,11 +396,26 @@ class MindBot:
         Returns:
             Token count after compaction.
         """
+        if self._agent is None:
+            return 0
         return await self._agent.compact_context(session_id)
 
     def get_conversation_token_count(self, session_id: str = "default") -> int:
         """Return the conversation block token count for a session."""
+        if self._agent is None:
+            return 0
         return self._agent.get_conversation_token_count(session_id)
+
+    def list_sessions(self) -> list[str]:
+        """List past session IDs from the journal."""
+        if not self.config.session_journal.enabled:
+            return []
+        try:
+            from mindbot.session.store import SessionJournal
+            journal = SessionJournal(self.config.session_journal.path)
+            return journal.list_sessions()
+        except Exception:
+            return []
 
     # ==================================================================
     # Tool Interfaces
@@ -396,7 +423,8 @@ class MindBot:
 
     def register_tool(self, tool: Any) -> None:
         """Register tool."""
-        self._agent.register_tool(tool)
+        if self._agent is not None:
+            self._agent.register_tool(tool)
 
     # ==================================================================
     # Cron
@@ -404,6 +432,8 @@ class MindBot:
 
     async def _on_cron_job(self, job: object) -> str | None:
         """Handle a fired cron job by sending its message to the agent."""
+        if self._agent is None:
+            return None
         try:
             response = await self._agent.chat(
                 job.payload.message,
@@ -426,6 +456,8 @@ class MindBot:
 
     def _register_cron_tools(self) -> None:
         """Create and register cron management tools on the agent."""
+        if self._agent is None:
+            return
         from mindbot.tools.cron_ops import create_cron_tools
 
         for tool in create_cron_tools(self.cron, channel_ctx_fn=lambda: self._channel_ctx):

@@ -43,9 +43,11 @@ async def handle_slash_command(cmd: str, bot: Any, shell_ctx: Any = None) -> Non
     elif command == "/theme":
         cmd_theme(args)
     elif command == "/clear":
-        cmd_clear(bot)
+        cmd_clear(bot, shell_ctx)
     elif command == "/compact":
         await cmd_compact(bot)
+    elif command == "/sessions":
+        cmd_sessions(bot, args)
     else:
         console.print(f"[yellow]Unknown command: {command}[/yellow]")
         console.print("[dim]Type /help for available commands[/dim]")
@@ -134,6 +136,7 @@ _SLASH_COMMANDS = [
     ("/theme", "Switch theme (dark/light)"),
     ("/clear", "Clear all conversation context"),
     ("/compact", "Force compress conversation context"),
+    ("/sessions", "List past sessions (--session to resume)"),
     ("exit / quit / bye", "Exit the shell"),
 ]
 
@@ -439,12 +442,23 @@ User request: {query}"""
 
 
 # ---------------------------------------------------------------------------
-# /clear — 清空上下文
+# /clear — 清空上下文 + 终端界面
 # ---------------------------------------------------------------------------
 
-def cmd_clear(bot: Any) -> None:
-    """清空当前会话的所有上下文。"""
+def cmd_clear(bot: Any, shell_ctx: Any = None) -> None:
+    """清空当前会话的所有上下文，并清屏重新打印欢迎横幅。"""
     bot.clear_context()
+    console.clear()
+
+    if shell_ctx is not None:
+        from mindbot.cli.shell.startup import build_welcome_banner
+        console.print(
+            build_welcome_banner(
+                model_name=bot.model,
+                workspace=str(shell_ctx.workspace),
+                session_id=shell_ctx.session_id,
+            )
+        )
     console.print("[green]✓ Context cleared[/green]")
 
 
@@ -462,3 +476,27 @@ async def cmd_compact(bot: Any) -> None:
     saved = before - after
     pct = (saved / before * 100) if before > 0 else 0
     console.print(f"[green]✓ Compacted: {before} → {after} tokens ({pct:.0f}% saved)[/green]")
+
+
+# ---------------------------------------------------------------------------
+# /sessions — 会话管理
+# ---------------------------------------------------------------------------
+
+def cmd_sessions(bot: Any, args: list[str]) -> None:
+    """列出所有历史会话。"""
+    sessions = bot.list_sessions()
+    if not sessions:
+        console.print("[dim]No past sessions found.[/dim]")
+        console.print("[dim]Session journal is saved to ~/.mindbot/data/journal/[/dim]")
+        return
+
+    table = Table(title="Past Sessions", show_header=True, header_style="bold cyan")
+    table.add_column("Session ID", style="green", width=30)
+    table.add_column("Resume", style="dim")
+
+    for sid in sessions:
+        table.add_row(sid, f"mindbot shell --session {sid}")
+
+    console.print(table)
+    console.print()
+    console.print("[dim]Usage: mindbot shell --session <id> to resume[/dim]")

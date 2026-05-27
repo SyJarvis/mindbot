@@ -536,6 +536,10 @@ class ContextConfig(BaseModel):
     compression_config: ContextCompressionConfig = Field(
         default_factory=ContextCompressionConfig,
     )
+    snapshot_enabled: bool = Field(
+        default=False,
+        description="Enable conversation continuity snapshot (Phase A).",
+    )
 
 
 class MultimodalConfig(BaseModel):
@@ -561,6 +565,10 @@ class CLIChannelConfig(BaseModel):
     """CLI channel configuration."""
 
     enabled: bool = False
+    toolbar_during_streaming: bool = Field(
+        default=True,
+        description="Keep the status toolbar visible during LLM streaming replies.",
+    )
 
 
 class TelegramChannelConfig(BaseModel):

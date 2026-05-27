@@ -30,9 +30,6 @@ def toolcall15_adapter(
     from mindbot.benchmarking import serve_toolcall15_adapter
 
     resolved_config_path = config_path or find_config_file()
-    if resolved_config_path is None:
-        console.print("[red]Error: Config not found. Run 'mindbot generate-config' first.[/red]")
-        raise typer.Exit(1)
 
     console.print("[bold green]Starting ToolCall-15 adapter[/bold green]")
     console.print(f"  Host: {host}")

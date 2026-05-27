@@ -5,7 +5,7 @@
 </div>
 
 <p align="center">
-  <a href="https://github.com/SyJarvis/mindbot"><img src="https://img.shields.io/badge/Version-0.3.5-blue.svg" alt="Version"></a>
+  <a href="https://github.com/SyJarvis/mindbot"><img src="https://img.shields.io/badge/Version-0.3.7-blue.svg" alt="Version"></a>
   <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3.10+-blue?logo=python" alt="Python"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License"></a>
 </p>
@@ -18,6 +18,11 @@
 
 ## 📢 News
 
+- **2026-05-28** 🖥️ **v0.3.7** — Codex 风格 TUI、消息滚动/复制、会话连续性恢复、默认配置启动
+
+<details>
+<summary>Earlier news</summary>
+
 - **2026-05-02** ⏰ **定时任务（Cron）** — 对话创建定时任务，支持一次性/循环/cron 表达式，多渠道投递
 - **2026-04-28** 🔄 **Hailo NPU + 动态健康监控** — Hailo-10H 硬件直连推理、Provider 后台探测静默恢复
 - **2026-04-23** 🔐 **权限审批系统** — 工具执行通用审批机制，白名单/按需确认
@@ -27,10 +32,6 @@
 - **2026-04-10** 🚀 **实时配置系统** — ConfigBus 事件总线
 - **2026-04-09** 🏗️ **ACP 协议支持** — Agent Client Protocol 通道
 - **2026-04-02** 📊 **Agent Benchmark** — ToolCall-15 benchmark
-
-<details>
-<summary>Earlier news</summary>
-
 - **2026-03-05** 🔧 **v0.3.0** — 多 Agent 编排、Skills 机制、会话 Journal
 - **2026-02-27** 🧠 **记忆系统** — 短期/长期记忆，向量检索
 - **2026-02-20** 💬 **多通道支持** — 飞书、Telegram、HTTP
@@ -194,13 +195,17 @@ export OPENAI_API_KEY=your-api-key
 
 后台探测不活跃 Provider，恢复后自动加回可用池。
 
-### 2. 初始化配置
+### 2. 配置方式
+
+MindBot 可以直接使用默认配置启动；需要连接具体模型时，可以使用环境变量快速覆盖：
 
 ```bash
-mindbot generate-config
+export MINDBOT_MODEL=default/qwen3
+export MINDBOT_BASE_URL=http://localhost:11434/v1
+export MINDBOT_API_KEY=ollama
 ```
 
-这会创建 `~/.mindbot/settings.json` 和 `~/.mindbot/SYSTEM.md`。
+也可以创建 `~/.mindbot/settings.json` 使用完整配置。
 
 ### 3. 开始对话
 
@@ -224,11 +229,11 @@ asyncio.run(main())
 mindbot <command> [options]
 
 Commands:
-  generate-config   初始化配置（别名: onboard）
   serve             启动服务（多通道）
   shell             进入交互式 shell
   chat              发送单条消息
   status            显示状态
+  toolcall15-adapter 启动 ToolCall-15 benchmark 适配器
 
   config show       显示当前配置
   config validate   验证配置
@@ -252,10 +257,13 @@ mindbot shell
 | `/model <name>` | 切换到指定模型（如 `/model local-ollama/qwen3`）|
 | `/config` | 实时配置命令（授权、设置）|
 | `/status` | 显示当前状态和 Provider 健康状态 |
+| `/sessions` | 列出历史会话 |
+| `/clear` | 清空当前上下文 |
+| `/compact` | 手动压缩上下文 |
 | `/help` | 显示帮助 |
 | `exit` / `quit` / `bye` | 退出 Shell |
 
-> 使用方向键浏览历史输入
+> TUI 支持鼠标滚轮和方向键滚动消息区，鼠标左键选中文本后会自动复制。
 
 ---
 
@@ -346,8 +354,6 @@ export TELEGRAM_BOT_TOKEN=your-token
 
 任务数据持久化在 `~/.mindbot/cron/jobs.json`，重启后自动恢复。
 
-> 详细实现文档：[docs/develop/cron-tool-impl.md](docs/develop/cron-tool-impl.md)
-
 ---
 
 ## 文档导航
@@ -360,7 +366,6 @@ export TELEGRAM_BOT_TOKEN=your-token
 | 示例代码 | [docs/guide/examples.md](docs/guide/examples.md) |
 | CLI 命令 | [docs/guide/cli-reference.md](docs/guide/cli-reference.md) |
 | Skills 机制 | [docs/guide/skills.md](docs/guide/skills.md) |
-| 定时任务实现 | [docs/develop/cron-tool-impl.md](docs/develop/cron-tool-impl.md) |
 | Benchmark | [docs/testing/toolcall15.md](docs/testing/toolcall15.md) |
 
 ---

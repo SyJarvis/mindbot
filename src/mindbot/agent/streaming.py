@@ -58,9 +58,7 @@ class StreamingExecutor:
             )
 
         except Exception as e:
-            logger.error(f"Error in execute_stream: {e}")
-            if on_event:
-                on_event(AgentEvent.error(str(e)))
+            logger.error("Error in execute_stream: {}", e)
             raise
 
     async def stream(

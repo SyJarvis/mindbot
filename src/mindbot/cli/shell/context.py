@@ -17,9 +17,10 @@ console = Console()
 class ShellSessionContext:
     """Per-session shell directory and trust state."""
 
-    config_file: Path
+    config_file: Path | None
     workspace: Path
     session_cwd: Path
+    session_id: str = "default"
     persisted_trusted_paths: set[Path] = field(default_factory=set)
     session_trusted_paths: set[Path] = field(default_factory=set)
     session_cwd_authorized: bool | None = None
@@ -54,7 +55,7 @@ def unique_paths(paths: list[Path | str]) -> list[Path]:
     return resolved
 
 
-def resolve_shell_session_context(bot: Any, config_file: Path, launch_cwd: Path) -> ShellSessionContext:
+def resolve_shell_session_context(bot: Any, config_file: Path | None, launch_cwd: Path) -> ShellSessionContext:
     """根据配置和启动目录构建 shell 会话状态。"""
     from mindbot.tools.path_policy import is_within_allowed_roots, resolve_allowed_roots
 
@@ -79,8 +80,10 @@ def resolve_shell_session_context(bot: Any, config_file: Path, launch_cwd: Path)
     )
 
 
-def persist_trusted_path(config_file: Path, trusted_path: Path) -> None:
+def persist_trusted_path(config_file: Path | None, trusted_path: Path) -> None:
     """将受信路径持久化到配置文件。"""
+    if config_file is None:
+        return
     data = json.loads(config_file.read_text(encoding="utf-8"))
     agent_data = data.setdefault("agent", {})
     trusted_paths = agent_data.setdefault("trusted_paths", [])

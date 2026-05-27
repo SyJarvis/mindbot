@@ -16,8 +16,7 @@
         theme.py              主题管理（dark/light）
         toast.py              非侵入式 Toast 通知
         startup.py            欢迎界面
-    cli/commands/
-        onboard.py            generate-config / onboard 命令
+     cli/commands/
         chat.py               chat 命令
         serve.py              serve 命令
         status.py             status 命令
@@ -54,7 +53,6 @@ def main(
 
 # --- 命令注册 ---
 
-from mindbot.cli.commands.onboard import onboard
 from mindbot.cli.commands.chat import chat
 from mindbot.cli.commands.serve import serve
 from mindbot.cli.commands.status import status
@@ -63,8 +61,6 @@ from mindbot.cli.commands.config_show import config_app
 from mindbot.cli.shell import shell_command
 
 app.command("shell")(shell_command)
-app.command("generate-config")(onboard)
-app.command("onboard")(onboard)
 app.command()(chat)
 app.command()(serve)
 app.command()(status)

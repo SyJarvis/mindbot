@@ -63,6 +63,7 @@ _PRIORITY = {
     "user": 100,
     "skill_detail": 70,
     "memory": 60,
+    "conversation_continuity": 55,
     "skill_overview": 50,
     "intent": 50,
     "conversation": 40,
@@ -158,6 +159,7 @@ class InputBuilder:
         self._populate_skills_blocks(query_text)
         await self._populate_memory_block(query_text)
         await self._ctx.maybe_compact()
+        await self._maybe_create_snapshot()
         self._ctx.set_intent_state(intent_state)
 
         user_msg = Message(role="user", content=user_input)
@@ -195,6 +197,7 @@ class InputBuilder:
         items.extend(self._system_items())
         items.extend(self._skill_items())
         items.extend(self._memory_items())
+        items.extend(self._conversation_continuity_items())
         items.extend(self._conversation_items())
         items.extend(self._intent_items())
         items.extend(self._user_items())
@@ -309,6 +312,32 @@ class InputBuilder:
             )
         ]
 
+    def _conversation_continuity_items(self) -> list[ContextItem]:
+        """Create a context item from the conversation continuity snapshot.
+
+        The snapshot is a structured, compact record of the current task,
+        decisions, focus, open questions, and deictic bindings.  It has
+        higher priority than raw conversation history so it survives
+        tight token budgets, ensuring the LLM can maintain context even
+        when older messages are compressed or dropped.
+        """
+        snapshot = self._ctx.snapshot
+        if snapshot is None or snapshot.is_empty:
+            return []
+
+        snap_msg = snapshot.to_message()
+        return [
+            ContextItem(
+                name="conversation_continuity",
+                source="conversation_continuity",
+                messages=[snap_msg],
+                priority=_PRIORITY["conversation_continuity"],
+                salience=0.85,
+                cache_scope="session",
+                compress=_truncate_messages_factory([snap_msg]),
+            )
+        ]
+
     def _intent_items(self) -> list[ContextItem]:
         msgs = self._ctx.get_block_messages("intent_state")
         if not msgs:
@@ -341,6 +370,28 @@ class InputBuilder:
                 compress=_truncate_messages_factory(msgs),
             )
         ]
+
+    # ------------------------------------------------------------------
+    # Soft trigger for initial snapshot creation
+    # ------------------------------------------------------------------
+
+    async def _maybe_create_snapshot(self) -> None:
+        """Create an initial snapshot when conversation is meaningful but none exists.
+
+        Fires exactly once per session: when the conversation block exceeds
+        50 % of the token budget and no snapshot has been created yet.
+        """
+        if self._ctx.snapshot is not None:
+            return
+        conv = self._ctx.get_block("conversation")
+        if conv.token_count > self._ctx.max_tokens * 0.5:
+            logger.info(
+                "input_builder: creating initial snapshot "
+                "(conv=%d > 50%% of %d)",
+                conv.token_count,
+                self._ctx.max_tokens,
+            )
+            await self._ctx.ensure_snapshot()
 
     # ------------------------------------------------------------------
     # Skills block population

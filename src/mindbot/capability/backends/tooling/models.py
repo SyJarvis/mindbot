@@ -16,6 +16,22 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, get_type_hints
 
 
+def _normalize_parameters_schema(schema: dict[str, Any]) -> dict[str, Any]:
+    """Ensure the schema is a valid JSON Schema object.
+
+    Some providers (e.g. DeepSeek) reject schemas that lack
+    ``"type": "object"``. This normalizes empty or incomplete schemas.
+    """
+    if not isinstance(schema, dict):
+        return {"type": "object", "properties": {}}
+    result = dict(schema)
+    if result.get("type") != "object":
+        result["type"] = "object"
+    if "properties" not in result:
+        result["properties"] = {}
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Parameter & Tool dataclasses
 # ---------------------------------------------------------------------------
@@ -54,7 +70,7 @@ class Tool:
     def parameters_json_schema(self) -> dict[str, Any]:
         """Build a JSON Schema ``object`` for the tool's parameters."""
         if self.parameters_schema_override is not None:
-            return self.parameters_schema_override
+            return _normalize_parameters_schema(self.parameters_schema_override)
 
         properties: dict[str, Any] = {}
         required: list[str] = []
