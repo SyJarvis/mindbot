@@ -13,6 +13,7 @@ supervisor / multi-agent scenarios.
 
 from __future__ import annotations
 
+import re
 from collections import OrderedDict
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
@@ -220,6 +221,9 @@ class Agent:
 
         Uses LRU eviction: the least-recently-used session is dropped once the
         cache reaches ``_max_sessions``.
+
+        When a new session is created and a journal is available, past messages
+        from the journal are restored into the conversation context.
         """
         if session_id in self._sessions:
             self._sessions.move_to_end(session_id)
@@ -227,6 +231,19 @@ class Agent:
 
         ctx = ContextManager(self._context_config, llm=self.llm)
         self._sessions[session_id] = ctx
+
+        # Restore past messages from journal
+        if self._journal is not None and self._journal.session_exists(session_id):
+            entries = self._journal.read(session_id)
+            for entry in entries:
+                try:
+                    msg = entry.to_message()
+                    ctx.add_conversation(msg)
+                except Exception as exc:
+                    logger.warning(
+                        "agent.session.restore_skip agent={} session={}: {}",
+                        self.name, session_id, exc,
+                    )
 
         if len(self._sessions) > self._max_sessions:
             evicted = next(iter(self._sessions))
@@ -378,6 +395,11 @@ class Agent:
             session_id=session_id,
             user_timestamp=user_timestamp,
         )
+
+        if self._context_config.snapshot_enabled:
+            ctx = self._get_session_context(session_id)
+            await self._detect_and_repair_context(ctx, message, response)
+
         logger.debug("_run_turn.persisted session={} stop_reason={}", session_id, response.stop_reason)
         return response
 
@@ -460,6 +482,11 @@ class Agent:
             session_id=session_id,
             user_timestamp=user_timestamp,
         )
+
+        if self._context_config.snapshot_enabled:
+            ctx = self._get_session_context(session_id)
+            await self._detect_and_repair_context(ctx, message, response)
+
         logger.info(
             "chat_stream.finish agent={} session={} stop_reason={}",
             self.name, session_id, response.stop_reason,
@@ -483,6 +510,48 @@ class Agent:
         """Return the conversation block token count for *session_id*."""
         ctx = self._get_session_context(session_id)
         return ctx.get_block("conversation").token_count
+
+    # ------------------------------------------------------------------
+    # Context loss detection
+    # ------------------------------------------------------------------
+
+    async def _detect_and_repair_context(
+        self,
+        ctx: "ContextManager",
+        user_message: str,
+        response: AgentResponse,
+    ) -> None:
+        """Detect signs of context loss and rebuild the snapshot.
+
+        Uses lightweight regex heuristics on the assistant response and
+        user message.  A combined score ≥ 0.5 triggers a snapshot rebuild
+        from the full conversation block.
+        """
+        score = 0.0
+        assistant_text = response.content or ""
+
+        # Assistant forgetfulness signals (each +0.3)
+        if re.search(r"\bI\s+don['']t\s+remember\b", assistant_text, re.I):
+            score += 0.3
+        if re.search(r"\bcould\s+you\s+remind\b", assistant_text, re.I):
+            score += 0.3
+        if re.search(r"\bI\s+might\s+have\s+missed\b", assistant_text, re.I):
+            score += 0.3
+
+        # User correction signals (each +0.5)
+        if re.search(r"\bI\s+already\s+told\s+you\b", user_message, re.I):
+            score += 0.5
+        if re.search(r"\bas\s+I\s+said\s+(before|earlier|already)\b", user_message, re.I):
+            score += 0.5
+        if re.search(r"\byou['\u2019]re\s+forgetting\b", user_message, re.I):
+            score += 0.5
+
+        if score >= 0.5:
+            logger.info(
+                "Context loss detected (score=%.1f) agent=%s session=%s, rebuilding snapshot",
+                score, self.name, getattr(response, "session_id", "?"),
+            )
+            await ctx._rebuild_snapshot()
 
     # ------------------------------------------------------------------
     # Repr

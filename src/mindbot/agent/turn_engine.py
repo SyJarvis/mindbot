@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import time
 import uuid
 from collections.abc import AsyncIterator, Callable
@@ -85,7 +86,7 @@ class TurnEngine:
                 on_event(AgentEvent.complete(response.stop_reason))
 
         except Exception as exc:
-            logger.exception("turn.error turn_id={}", resolved_turn_id)
+            logger.error("turn.error turn_id={} {}", resolved_turn_id, exc)
             response.stop_reason = StopReason.ERROR
             if on_event:
                 on_event(AgentEvent.error(str(exc)))
@@ -404,6 +405,7 @@ class TurnEngine:
                         call_id=tool_call.id,
                         arguments=tool_call.arguments,
                     ))
+                    await asyncio.sleep(0)
 
                 tool_result = await self._resolve_and_execute(tool_call, turn_id)
                 results.append(tool_result)

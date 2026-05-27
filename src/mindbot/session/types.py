@@ -42,3 +42,27 @@ class SessionMessage:
     def from_dict(cls, data: dict[str, Any]) -> SessionMessage:
         known = {f.name for f in cls.__dataclass_fields__.values()}
         return cls(**{k: v for k, v in data.items() if k in known})
+
+    def to_message(self) -> Any:
+        """Convert back to :class:`~mindbot.context.models.Message` for context injection."""
+        from mindbot.context.models import Message
+
+        kwargs: dict[str, Any] = {
+            "role": self.role,
+            "content": self.content or "",
+        }
+        if self.tool_calls is not None:
+            from mindbot.context.models import ToolCall
+            kwargs["tool_calls"] = [ToolCall(**tc) for tc in self.tool_calls]
+        for field_name in (
+            "reasoning_content", "tool_call_id", "turn_id", "iteration",
+            "message_kind", "tool_name", "error", "is_meta",
+        ):
+            val = getattr(self, field_name, None)
+            if val is not None:
+                kwargs[field_name] = val
+        for field_name in ("provider", "usage", "finish_reason", "stop_reason"):
+            val = getattr(self, field_name, None)
+            if val is not None:
+                kwargs[field_name] = val
+        return Message(**kwargs)
