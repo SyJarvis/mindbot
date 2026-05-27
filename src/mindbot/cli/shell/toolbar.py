@@ -36,6 +36,7 @@ class StatusSnapshot:
     context_usage: float = 0.0  # 0.0 ~ 1.0
     context_tokens: int = 0
     max_context_tokens: int = 0
+    queued_count: int = 0      # 消息队列中的待处理消息数
 
 
 # ---------------------------------------------------------------------------
@@ -254,12 +255,20 @@ def _format_context_status(
     context_usage: float,
     context_tokens: int,
     max_context_tokens: int,
+    queued_count: int = 0,
 ) -> str:
-    """Format context usage string for toolbar line 2."""
-    pct = context_usage * 100
+    """Format context usage with gauge bar for toolbar line 2."""
+    pct = int(context_usage * 100)
+    bar_width = 10
+    filled = int(context_usage * bar_width)
+    bar = "\u2588" * filled + "\u2591" * (bar_width - filled)
+
+    parts = [f"context: {bar} {pct}%"]
     if max_context_tokens > 0:
-        return f"Context: {pct:.1f}% ({context_tokens:,}/{max_context_tokens:,} tokens)"
-    return ""
+        parts.append(f"({context_tokens:,}/{max_context_tokens:,})")
+    if queued_count > 0:
+        parts.append(f"[+{queued_count}]")
+    return " ".join(parts)
 
 
 # ---------------------------------------------------------------------------
@@ -429,4 +438,63 @@ def _render_right_span(status: StatusSnapshot) -> str:
         status.context_usage,
         status.context_tokens,
         status.max_context_tokens,
+        status.queued_count,
     )
+
+
+# ============================================================================
+# Rich 版本状态栏（供 LiveRenderer 使用）
+# ============================================================================
+
+def render_status_line(
+    status: StatusSnapshot,
+    columns: int,
+) -> "Text":
+    """Render a single-line status bar for use inside Rich Live.
+
+    Simplified version of ``render_toolbar`` that outputs a
+    :class:`rich.text.Text` instead of ``prompt_toolkit`` formatted text.
+    """
+    from rich.text import Text
+
+    result = Text()
+    remaining = columns
+
+    # ── Model name + thinking dot ──────────────────────────────────────
+    thinking_dot = "\u25cf" if status.thinking else "\u25cb"
+    dot_style = "bold yellow" if status.thinking else "dim"
+    leader = f"  {status.model_name} {thinking_dot}  "
+    result.append(leader, style="bold")
+    remaining -= len(leader)
+
+    # ── CWD + git badge ────────────────────────────────────────────────
+    cwd = _truncate_left(_shorten_cwd(status.workspace), _MAX_CWD_COLS)
+    branch = _get_git_branch()
+    if branch and remaining > len(cwd) + 5:
+        dirty, ahead, behind = _get_git_status()
+        branch = _truncate_right(branch, _MAX_BRANCH_COLS)
+        badge = _format_git_badge(branch, dirty, ahead, behind)
+        segment = f"{cwd} {badge}  "
+    else:
+        segment = f"{cwd}  "
+    result.append(segment, style="dim")
+    remaining -= len(segment)
+
+    # ── Tips (right-aligned) ───────────────────────────────────────────
+    tip = _get_one_rotating_tip()
+    if tip and len(tip) <= remaining:
+        pad = max(0, remaining - len(tip))
+        result.append(" " * pad + tip, style="dim italic")
+        remaining = 0
+
+    # ── Session + context (right-aligned) ──────────────────────────────
+    suffix_parts = [f"session: {status.session_id}"]
+    if status.max_context_tokens > 0:
+        pct = int(status.context_usage * 100)
+        suffix_parts.append(f"ctx: {pct}%")
+    suffix = "  \u2502  ".join(suffix_parts)
+    if remaining >= len(suffix) + 2:
+        result.append(" " * max(2, remaining - len(suffix)))
+        result.append(suffix, style="dim")
+
+    return result
