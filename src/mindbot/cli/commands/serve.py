@@ -17,23 +17,24 @@ def serve(
     """启动 MindBot 服务器及所有已启用的 channel。"""
 
     config_file = find_config_file()
-    if not config_file:
-        console.print("[red]Error: Config not found. Run 'mindbot generate-config' first.[/red]")
-        raise typer.Exit(1)
 
     async def main():
-        from mindbot import MessageBus, ChannelManager
-        from mindbot.bot import MindBot
-        from mindbot.bus.events import OutboundMessage
-        from mindbot.config.loader import load_config
-        from mindbot.config.store import ConfigStore
+        try:
+            from mindbot import MessageBus, ChannelManager
+            from mindbot.bot import MindBot
+            from mindbot.bus.events import OutboundMessage
+            from mindbot.config.loader import load_config
+            from mindbot.config.store import ConfigStore
 
-        config = load_config(config_file)
-        store = ConfigStore(config, path=config_file)
+            config = load_config(config_file)
+            store = ConfigStore(config, path=config_file)
 
-        bus = MessageBus()
-        channel_manager = ChannelManager(config, bus)
-        bot = MindBot(config_store=store)
+            bus = MessageBus()
+            channel_manager = ChannelManager(config, bus)
+            bot = MindBot(config_store=store)
+        except Exception as e:
+            console.print(f"[red]Error: {e}[/red]")
+            raise typer.Exit(1) from e
 
         # Wire cron delivery: agent response → bus → channel
         async def _deliver(channel: str, to: str, content: str) -> None:

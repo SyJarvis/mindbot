@@ -16,33 +16,36 @@ config_app = typer.Typer(help="Manage configuration")
 def config_show() -> None:
     """显示当前配置。"""
     config_file = find_config_file()
-    if not config_file:
-        console.print("[yellow]Config not found. Run 'mindbot generate-config' first.[/yellow]")
-        raise typer.Exit(1)
-
-    try:
-        text = config_file.read_text(encoding="utf-8")
+    if config_file:
+        try:
+            text = config_file.read_text(encoding="utf-8")
+            syntax = Syntax(text, "json")
+            panel = Panel(syntax, title=f"Configuration: {config_file}", border_style="green")
+            console.print(panel)
+        except Exception as e:
+            console.print(f"[red]Error reading config: {e}[/red]")
+            raise typer.Exit(1)
+    else:
+        from mindbot.config.loader import load_config
+        import json as _json
+        config = load_config()
+        text = _json.dumps(config.model_dump(mode="json"), indent=2, ensure_ascii=False)
         syntax = Syntax(text, "json")
-        panel = Panel(syntax, title=f"Configuration: {config_file}", border_style="green")
+        panel = Panel(syntax, title="Effective configuration (defaults + env)", border_style="green")
         console.print(panel)
-    except Exception as e:
-        console.print(f"[red]Error reading config: {e}[/red]")
-        raise typer.Exit(1)
 
 
 @config_app.command("validate")
 def config_validate() -> None:
     """验证当前配置。"""
-    config_file = find_config_file()
-    if not config_file:
-        console.print("[yellow]Config not found. Run 'mindbot generate-config' first.[/yellow]")
-        raise typer.Exit(1)
+    from mindbot.config.loader import load_config
 
+    config_file = find_config_file()
     try:
-        from mindbot.config.loader import load_config
         config = load_config(config_file)
 
-        console.print(f"[green]✓[/green] Config is valid: {config_file}")
+        src = str(config_file) if config_file else "defaults.json"
+        console.print(f"[green]✓[/green] Config is valid: {src}")
         console.print(f"  Agent model: {config.agent.model}")
         console.print(f"  Providers: {', '.join(config.providers.keys()) or '(none)'}")
         console.print(f"  Routing: {'auto' if config.routing.auto else 'manual'}")

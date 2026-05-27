@@ -54,7 +54,20 @@ def create_llm(config: "Config") -> Any:
     provider_cfg = config.providers.get(instance_name)
     driver_type = provider_cfg.type if provider_cfg else instance_name
 
-    return ProviderFactory.create(driver_type, provider_dict)
+    try:
+        return ProviderFactory.create(driver_type, provider_dict)
+    except ValueError:
+        known = ", ".join(sorted(ProviderFactory.list_providers()))
+        available = ", ".join(sorted(config.providers.keys()))
+        msg = (
+            f"Provider '{instance_name}' is not configured.\n"
+            f"  model: {config.agent.model}\n"
+        )
+        if available:
+            msg += f"  configured providers: {available}\n"
+        msg += f"  known drivers: {known}\n"
+        msg += "  Add it to ~/.mindbot/settings.json or set MIND_AGENT__MODEL"
+        raise ValueError(msg) from None
 
 
 def _resolve_provider_params(
