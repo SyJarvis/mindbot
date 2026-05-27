@@ -1,87 +1,171 @@
 # AGENTS.md — MindBot AI Agent 指令
 
-## 项目入口
+用于减少大语言模型在编码任务中常见错误的行为准则。可根据需要与项目特定指令合并使用。
 
-| 入口 | 路径 | 说明 |
-|------|------|------|
-| 核心 | `src/mindbot/bot.py` | `MindBot` 类，`chat()` / `chat_stream()` |
-| CLI | `mindbot` 命令 | `src/mindbot/cli/__init__.py:app` |
-| 配置 | `~/.mindbot/settings.json` | 支持 `$MIND_CONFIG_PATH` 覆盖 |
+**取舍：** 这些准则更偏向谨慎，而不是速度。对于非常简单的任务，应自行判断。
 
-```bash
-uv sync                    # 安装依赖
-uv sync --extra dev        # + pytest, ruff
-pytest tests/              # 测试
-ruff check src/ tests/     # Lint
-mindbot shell              # 交互式 shell
-mindbot serve              # 多通道服务
+## 1. 编码前先思考
+
+**不要假设。不要掩盖困惑。明确呈现取舍。**
+
+在实现之前：
+- 明确说明你的假设。如果不确定，就提问。
+- 如果存在多种理解方式，把它们提出来，不要默默选择其中一种。
+- 如果存在更简单的方案，要说明。必要时提出反对意见。
+- 如果有不清楚的地方，停下来。指出具体困惑之处，并提问。
+
+## 2. 简洁优先
+
+**用能解决问题的最少代码。不要做投机性的扩展。**
+
+- 不添加超出请求范围的功能。
+- 不为只使用一次的代码创建抽象。
+- 不添加未被要求的"灵活性"或"可配置性"。
+- 不为不可能发生的场景添加错误处理。
+- 如果你写了 200 行代码，而本可以用 50 行完成，就重写。
+
+问问自己："资深工程师会不会认为这过度复杂？"如果会，就简化。
+
+## 3. 外科手术式修改
+
+**只改必须改的地方。只清理你自己造成的问题。**
+
+编辑现有代码时：
+- 不要"改进"相邻代码、注释或格式。
+- 不要重构并未出问题的代码。
+- 遵循现有风格，即使你个人会采用不同写法。
+- 如果注意到无关的死代码，可以指出，但不要删除。
+
+当你的修改产生了孤立内容时：
+- 删除因你的修改而变得未使用的导入、变量或函数。
+- 除非被要求，否则不要删除原本就存在的死代码。
+
+检验标准：每一处变更都应能直接追溯到用户的请求。
+
+## 4. 目标驱动执行
+
+**定义成功标准。循环推进，直到验证完成。**
+
+将任务转化为可验证的目标：
+- "添加校验" → "为无效输入编写测试，然后让测试通过"
+- "修复 bug" → "编写一个能复现该问题的测试，然后让测试通过"
+- "重构 X" → "确保重构前后测试均通过"
+
+对于多步骤任务，先说明一个简短计划：
+```
+1. [步骤] → 验证：[检查项]
+2. [步骤] → 验证：[检查项]
+3. [步骤] → 验证：[检查项]
 ```
 
-## 架构决策规则
+明确的成功标准能让你独立循环推进。模糊的标准（例如"让它能工作"）则需要不断澄清。
 
-### 五层架构与依赖方向
+## 5. 文档与开发流程
+
+**需求先行，方案驱动，增量追踪。**
+
+### 5.1 三层文档体系
+
+| 层 | 目录 | 面向 | 职责 |
+|---|---|---|---|
+| 需求源头 | `plan/` | 开发者 | 会议纪要，按路线图阶段组织 |
+| 开发追踪 | `devlog/develop/` + `devlog/fix/` | 开发者 | 实现方案、进度追踪、完成标记 |
+| 用户手册 | `docs/` | 用户 | 功能说明、使用指南、架构介绍、变更日志 |
+
+### 5.2 plan/ — 会议纪要
+
+按路线图阶段组织目录，文件命名格式：`YYYY-MM-DD-topic.md`
 
 ```
-L1 通道层 (channels/) ──→ L2 编排层 (bot.py, agent/)
-                         ↓
-         L3 上下文层 (context/) ←── L4 能力层 (capability/, skills/)
-                         ↓
-         L5 基础设施层 (providers/, routing/, config/)
+plan/
+├── roadmap.md
+├── phase-a/
+│   ├── 2026-05-19-memory-refactor.md
+│   └── 2026-05-25-context-packing.md
+└── phase-b/
+    └── ...
 ```
 
-**允许的依赖方向：只能向下依赖。**
-- L1 → L2 → L3/L4/L5，L3 → L5（仅压缩策略），L4 → L5
-- **禁止**：L3 → L2（上下文不能调用编排），L1 → L4（通道不能直接执行工具）
+**流程**：需求讨论 → 产出会议纪要 → 创建对应 devlog 条目开始开发。
 
-### 新功能落在哪一层？
+### 5.3 devlog/ — 开发日志
 
-| 你要做的 | 落在哪层 | 判断依据 |
-|---------|---------|---------|
-| 接入新平台（Discord、微信） | L1 通道层 | 对接外部消息协议 |
-| 修改对话流程、多 Agent 协作 | L2 编排层 | 控制对话流转逻辑 |
-| 改上下文管理、压缩策略 | L3 上下文层 | 纯状态管理 |
-| 加新工具、新技能 | L4 能力层 | 可执行的能力 |
-| 接入新 LLM、改路由策略 | L5 基础设施层 | 外部服务适配 |
+```
+devlog/
+├── develop/                    # 新功能、重构、优化
+│   ├── DEV-001-context-packing.md
+│   └── DEV-002-memory-simplification.md
+└── fix/                        # Bug 修复
+    ├── FIX-001-ollama-streaming-error.md
+    └── FIX-002-memory-recall-crash.md
+```
 
-### 铁律
+**编号规则**：`DEV-NNN` 和 `FIX-NNN` 各自独立递增，零填充三位数。
 
-1. **只有两个入口**：`chat()` 和 `chat_stream()`，所有通道必须通过它们进入主链路
-2. **工具执行**：所有工具通过 `CapabilityFacade.resolve_and_execute()` 统一调度
-3. **全异步**：所有 I/O 必须是 `async`，禁止阻塞事件循环。同步操作用 `run_sync()` 包装
-4. **工具定义与实现分离**：Tool 定义在 `tools/`，handler 在 `capability/backends/`
-5. **TurnEngine 是唯一执行循环**：LLM ↔ Tool 的迭代循环只在 TurnEngine 内
-6. **配置热更新**：通过 ConfigBus 事件总线实时生效，不要缓存配置后忘记更新
+#### devlog 条目模板
 
-### Skill 机制 vs 硬编码
+```markdown
+---
+id: DEV-001
+type: develop          # develop | fix
+status: planning       # planning → in-progress → done
+plan: plan/phase-a/2026-05-19-memory-refactor.md  # 可选，关联会议纪要
+created: 2026-05-19
+updated: 2026-05-20
+---
 
-- **用 Skill**：提示层面的知识注入、可插拔的行为指导、用户可自定义的领域知识
-- **硬编码**：核心架构逻辑、不可变的铁律、性能关键的路径
+# 标题
 
-## 开发约束
+## 背景
+（需求摘要，或 fix 的 bug 描述）
 
-### 目录职责
+## 实现方案
+（编码前的方案设计）
 
-| 目录 | 职责 |
-|------|------|
-| `agent/` | Agent 编排（MindAgent, Agent, TurnEngine, InputBuilder） |
-| `providers/` | LLM 适配器（OpenAI, Ollama, Hailo, Transformers） |
-| `routing/` | 模型路由选择与 fallback |
-| `memory/` | 记忆系统（短期 + 长期） |
-| `capability/` | 工具统一调度（Facade → Executor → Backend） |
-| `channels/` | 通道（CLI, HTTP, 飞书, Telegram） |
-| `skills/` | 技能加载、选择、渲染 |
-| `config/` | 配置加载与热更新 |
-| `context/` | 7-block 上下文窗口与压缩 |
+## 实现记录
+- [ ] 步骤一
+- [ ] 步骤二
+- [ ] 步骤三
 
-### 测试约定
+## 验证
+- [ ] 测试通过
+- [ ] 手动验证
+```
 
-- `asyncio_mode = "auto"`：异步测试无需显式装饰器
-- 测试目录与 src 对应：`tests/agent/` → `src/mindbot/agent/`
-- 用 `FakeLLM` 做 Provider 替身，用 `AsyncMock` mock 异步方法
-- benchmark 测试已排除：`collect_ignore_glob = ["tests/benchmarking/*"]`
+**FIX 类型额外字段**：
 
-### 参考文档
+```markdown
+---
+id: FIX-001
+type: fix
+status: done
+root-cause: 描述根因
+fix: 描述修复方式
+related: DEV-001   # 可选，关联的开发条目
+---
+```
 
-- 完整架构：`docs/architecture/overview.md`
-- 配置指南：`docs/configuration/guide-zh.md`
-- 技能机制：`docs/guide/skills.md`
+#### 状态流转
+
+```
+planning（写好方案）→ in-progress（编码中，勾选 checklist）→ done（验证通过）
+```
+
+#### 更新规则
+
+- 编码前：创建条目，填写实现方案，status = planning
+- 编码中：更新 checklist 和实现记录，status = in-progress
+- 完成后：所有 checklist 勾选，status = done
+- 如发现新问题：创建 FIX 条目，通过 `related` 字段关联原始 DEV 条目
+
+### 5.4 docs/ — 用户手册
+
+`docs/` 是面向用户的产品文档，不存放开发者内部文档。包括但不限于：
+- 功能使用指南
+- 架构介绍
+- 变更日志（changelog）
+- 测试说明
+
+---
+
+**如果出现以下情况，说明这些准则正在发挥作用：** diff 中不必要的变更更少，因过度复杂而导致的重写更少，并且澄清问题发生在实现之前，而不是出错之后。
