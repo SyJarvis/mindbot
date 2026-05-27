@@ -34,7 +34,6 @@ allowed_tools: ["get_mindbot_runtime_info"]
   - `~/.mindbot/SYSTEM.md`：系统提示词
   - `~/.mindbot/skills/`：用户自定义技能目录
   - `~/.mindbot/memory/`、`~/.mindbot/history/`、`~/.mindbot/cron/`：工作目录子结构
-- `mindbot generate-config` 会初始化这些文件和目录。
 
 ## 回答原则
 - 如果用户问“怎么配置”，优先说明 `settings.json`、provider、memory、context、skills 等配置段。
