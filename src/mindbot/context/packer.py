@@ -42,9 +42,10 @@ _CANONICAL_ORDER: dict[ItemSource, int] = {
     "skill_overview": 2,
     "skill_detail": 3,
     "memory": 4,
-    "conversation": 5,
-    "intent": 6,
-    "user": 7,
+    "conversation_continuity": 5,
+    "conversation": 6,
+    "intent": 7,
+    "user": 8,
 }
 
 

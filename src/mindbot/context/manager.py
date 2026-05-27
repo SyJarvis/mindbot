@@ -25,6 +25,11 @@ from mindbot.config.schema import ContextConfig
 from mindbot.context.checkpoint import Checkpoint
 from mindbot.context.compression import CompressionStrategy, TruncateStrategy, get_strategy
 from mindbot.context.models import Message, MessageRole
+from mindbot.context.snapshot import (
+    ConversationContinuitySnapshot,
+    update_snapshot,
+    update_snapshot_from_messages,
+)
 from mindbot.utils import estimate_tokens
 from mindbot.logging import logger
 
@@ -131,8 +136,11 @@ class ContextManager:
                 )
                 self._strategy = TruncateStrategy()
 
+        self._llm = llm
+        self._snapshot: ConversationContinuitySnapshot | None = None
         self._needs_compaction: bool = False
-        self._checkpoints: dict[str, Checkpoint] = {}
+        self._needs_snapshot_update: bool = False
+        self._checkpoints: dict[str, Checkpoint] = {} 
 
         budgets = _resolve_block_budgets(self._config)
         self._blocks: dict[str, ContextBlock] = {
@@ -305,6 +313,68 @@ class ContextManager:
         self._blocks["user_input"].messages.clear()
 
     # ------------------------------------------------------------------
+    # Conversation continuity snapshot
+    # ------------------------------------------------------------------
+
+    @property
+    def snapshot(self) -> ConversationContinuitySnapshot | None:
+        return self._snapshot
+
+    def set_snapshot(self, snapshot: ConversationContinuitySnapshot) -> None:
+        self._snapshot = snapshot
+
+    async def update_snapshot(
+        self, user_message: str, assistant_message: str
+    ) -> None:
+        """Update the conversation continuity snapshot with the latest turn.
+
+        Uses the stored LLM to incrementally update the snapshot.  If no
+        LLM is available or the call fails, the previous snapshot is kept.
+        """
+        if self._llm is None:
+            return
+
+        self._snapshot = await update_snapshot(
+            self._llm,
+            self._snapshot,
+            user_message,
+            assistant_message,
+        )
+
+    async def _rebuild_snapshot(self) -> None:
+        """Rebuild the snapshot from the current conversation block.
+
+        Called after compaction, on soft trigger, or when context loss
+        is detected.  Uses the most recent messages from the conversation
+        block as input.
+        """
+        if self._llm is None:
+            return
+        if not self._config.snapshot_enabled:
+            return
+        msgs = self._blocks["conversation"].messages
+        if not msgs:
+            return
+        self._snapshot = await update_snapshot_from_messages(
+            self._llm, self._snapshot, msgs
+        )
+
+    async def ensure_snapshot(self) -> None:
+        """Create an initial snapshot if none exists.
+
+        Idempotent — does nothing if a snapshot already exists.  Called
+        by InputBuilder as a soft trigger when conversation exceeds 50 %
+        of the token budget.
+        """
+        if self._snapshot is not None and not self._snapshot.is_empty:
+            return
+        await self._rebuild_snapshot()
+
+    def mark_needs_snapshot(self) -> None:
+        """Signal that the snapshot should be rebuilt at the next opportunity."""
+        self._needs_snapshot_update = True
+
+    # ------------------------------------------------------------------
     # Legacy helpers (backward-compatible with old flat API)
     # ------------------------------------------------------------------
 
@@ -389,6 +459,8 @@ class ContextManager:
             m.token_count = estimate_tokens(m.text)
         after = conv.token_count
         logger.info("Compacted conversation: %d → %d tokens", before, after)
+
+        await self._rebuild_snapshot()
         return after
 
     # ------------------------------------------------------------------

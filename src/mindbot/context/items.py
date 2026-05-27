@@ -40,6 +40,7 @@ ItemSource = Literal[
     "skill_overview",
     "skill_detail",
     "memory",
+    "conversation_continuity",
     "conversation",
     "intent",
     "user",

@@ -28,6 +28,7 @@ from mindbot.context.models import (
     UsageInfo,
 )
 from mindbot.context.packer import ContextPacker, PackerConfig
+from mindbot.context.snapshot import ConversationContinuitySnapshot, update_snapshot
 
 __all__ = [
     "CacheScope",
@@ -39,6 +40,7 @@ __all__ = [
     "ContextManager",
     "ContextPackResult",
     "ContextPacker",
+    "ConversationContinuitySnapshot",
     "FinishReason",
     "ImagePart",
     "ItemSource",
@@ -54,4 +56,5 @@ __all__ = [
     "TruncateStrategy",
     "UsageInfo",
     "get_strategy",
+    "update_snapshot",
 ]
