@@ -16,6 +16,7 @@ from mindbot.config.store import ConfigStore
 from mindbot.agent.core import MindAgent
 from mindbot.cron.service import CronService
 from mindbot.logging import logger, setup_logging
+from mindbot.runtime import ensure_runtime_home
 
 
 class MindBot:
@@ -53,6 +54,7 @@ class MindBot:
             self.config = self._load_default_config()
             self._store = None
 
+        ensure_runtime_home(self.config)
         setup_logging(self.config.logging)
 
         self._inject_system_prompt()
