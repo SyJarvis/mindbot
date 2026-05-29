@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from mindbot.agent.models import AgentEvent
+    from mindbot.context.models import MessageContent
     from mindbot.routing.health import HealthMonitor
 
 from mindbot.config.schema import Config
@@ -249,10 +250,11 @@ class MindBot:
 
     async def chat(
         self,
-        message: str,
+        message: "str | MessageContent | Any",
         session_id: str = "default",
         tools: list[Any] | None = None,
         on_event: "Callable[[AgentEvent], None] | None" = None,
+        images: list[Any] | None = None,
     ) -> Any:
         """Primary async chat entry point.
 
@@ -271,6 +273,7 @@ class MindBot:
             plain-text reply.
         """
         agent = self._require_agent()
+        message = self._prepare_message_content(message, images=images)
         return await agent.chat(
             message,
             session_id=session_id,
@@ -280,9 +283,10 @@ class MindBot:
 
     async def chat_stream(
         self,
-        message: str,
+        message: "str | MessageContent | Any",
         session_id: str = "default",
         tools: list[Any] | None = None,
+        images: list[Any] | None = None,
     ) -> AsyncIterator[str]:
         """Primary async streaming chat entry point.
 
@@ -299,8 +303,34 @@ class MindBot:
             String chunks of the assistant response
         """
         agent = self._require_agent()
+        message = self._prepare_message_content(message, images=images)
         async for chunk in agent.chat_stream(message, session_id=session_id, tools=tools):
             yield chunk
+
+    def _prepare_message_content(
+        self,
+        message: Any,
+        *,
+        images: list[Any] | None = None,
+    ) -> Any:
+        """Normalize optional user-facing image input into MessageContent."""
+        from mindbot.multimodal.models import ContentInput
+        from mindbot.multimodal.processor import MediaProcessor
+
+        processor = MediaProcessor(
+            max_images=self.config.multimodal.max_images,
+            max_file_size_mb=self.config.multimodal.max_file_size_mb,
+        )
+
+        if isinstance(message, ContentInput):
+            image_parts = processor.process_content_items(message.images)
+            return processor.build_message_content(message.text, image_parts)
+
+        if images:
+            image_parts = processor.process_images(images)
+            return processor.build_message_content(str(message), image_parts)
+
+        return message
 
     # ------------------------------------------------------------------
     # Deprecated compatibility shims – kept for one release cycle

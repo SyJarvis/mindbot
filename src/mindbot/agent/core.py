@@ -21,6 +21,7 @@ from mindbot.config.schema import Config
 from mindbot.memory import MemoryManager
 from mindbot.session import SessionJournal
 from mindbot.logging import logger
+from mindbot.context.models import MessageContent
 
 if TYPE_CHECKING:
     from mindbot.capability.facade import CapabilityFacade
@@ -163,7 +164,7 @@ class MindAgent:
 
     async def chat(
         self,
-        message: str,
+        message: str | MessageContent,
         session_id: str = "default",
         on_event: Callable[[AgentEvent], None] | None = None,
         tools: list[Any] | None = None,
@@ -197,7 +198,7 @@ class MindAgent:
 
     async def chat_stream(
         self,
-        message: str,
+        message: str | MessageContent,
         session_id: str = "default",
         tools: list[Any] | None = None,
     ) -> AsyncIterator[str]:

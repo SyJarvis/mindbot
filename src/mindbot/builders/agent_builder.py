@@ -91,9 +91,15 @@ def create_agent(
         llm = create_llm(config)
 
     memory = None
+    memory_curator = None
     if with_memory:
         from mindbot.memory.manager import MemoryManager
         memory = MemoryManager.from_schema_config(config)
+        if config.memory.curation.enabled:
+            from mindbot.memory.curator import MemoryCurator
+            memory_curator = MemoryCurator(
+                min_importance=config.memory.curation.min_importance,
+            )
 
     skill_registry = None
     if config.skills.enabled:
@@ -180,9 +186,12 @@ def create_agent(
         system_prompt=system_prompt if system_prompt is not None else config.agent.system_prompt,
         context_config=context_config,
         memory=memory,
+        memory_curator=memory_curator,
         memory_top_k=config.agent.memory_top_k,
         tool_persistence=config.agent.tool_persistence.value,
         max_iterations=config.agent.max_tool_iterations,
+        task_progress_policy=config.agent.task_progress_policy,
+        task_progress_review_after=config.agent.task_progress_review_after,
         max_sessions=config.agent.max_sessions,
         capability_facade=effective_facade,
         tool_backend=tool_backend,

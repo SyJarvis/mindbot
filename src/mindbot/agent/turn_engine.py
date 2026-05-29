@@ -34,11 +34,15 @@ class TurnEngine:
         tools: list["Tool"] | None = None,
         *,
         max_iterations: int = 20,
+        task_progress_policy: str = "stop",
+        task_progress_review_after: int | None = None,
         capability_facade: "CapabilityFacade | None" = None,
     ) -> None:
         self._llm = llm
         self._tools = tools or []
         self._max_iterations = max_iterations
+        self._task_progress_policy = task_progress_policy
+        self._task_progress_review_after = task_progress_review_after
         self._capability_facade = capability_facade
         self._streaming_executor = StreamingExecutor(llm)
         self._last_stream_response: AgentResponse | None = None
@@ -206,6 +210,15 @@ class TurnEngine:
 
                 if self._has_repeated_tool_call(messages, tool_calls, iteration):
                     response.stop_reason = StopReason.REPEATED_TOOL
+                    break
+                if self._should_request_task_review(iteration):
+                    response.stop_reason = StopReason.USER_INPUT_NEEDED
+                    response.content = self._task_review_prompt(iteration + 1)
+                    if on_event:
+                        on_event(AgentEvent.user_input_request(
+                            response.content,
+                            request_id=f"review-task-progress-{resolved_turn_id}",
+                        ))
                     break
             else:
                 response.stop_reason = StopReason.MAX_TURNS
@@ -375,6 +388,16 @@ class TurnEngine:
 
         if self._has_repeated_tool_call(messages, tool_calls, iteration):
             response.stop_reason = StopReason.REPEATED_TOOL
+            return False, messages
+
+        if self._should_request_task_review(iteration):
+            response.stop_reason = StopReason.USER_INPUT_NEEDED
+            response.content = self._task_review_prompt(iteration + 1)
+            if on_event:
+                on_event(AgentEvent.user_input_request(
+                    response.content,
+                    request_id=f"review-task-progress-{turn_id or uuid.uuid4().hex}",
+                ))
             return False, messages
 
         return True, messages
@@ -558,6 +581,23 @@ class TurnEngine:
                 return False
 
         return True
+
+    def _should_request_task_review(self, iteration: int) -> bool:
+        if self._task_progress_policy != "ask":
+            return False
+        review_after = self._task_progress_review_after
+        if review_after is None:
+            return False
+        completed_iterations = iteration + 1
+        return completed_iterations >= review_after
+
+    def _task_review_prompt(self, completed_iterations: int) -> str:
+        return (
+            f"I have completed {completed_iterations} tool-backed step(s), "
+            "but the task still appears to need more work. Please review the "
+            "current progress and confirm whether I should continue, change "
+            "approach, or stop here."
+        )
 
     @staticmethod
     def _make_trace_message(

@@ -14,6 +14,7 @@ supervisor / multi-agent scenarios.
 from __future__ import annotations
 
 import re
+import json
 from collections import OrderedDict
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
@@ -22,11 +23,13 @@ from typing import TYPE_CHECKING, Any
 from mindbot.agent.input_builder import InputBuilder
 from mindbot.agent.models import AgentEvent, AgentResponse
 from mindbot.agent.persistence_writer import PersistenceWriter, ToolPersistence
+from mindbot.agent.task_state import TaskState
 from mindbot.agent.turn_engine import TurnEngine
 from mindbot.capability.backends.tooling import ToolRegistry
 from mindbot.capability.backends.tooling.models import Tool
 from mindbot.config.schema import ContextConfig
 from mindbot.context import ContextManager
+from mindbot.context.models import MessageContent, TextPart
 from mindbot.logging import logger, set_log_context
 from mindbot.providers.adapter import ProviderAdapter
 
@@ -36,6 +39,7 @@ if TYPE_CHECKING:
     from mindbot.capability.facade import CapabilityFacade, ScopedCapabilityFacade
     from mindbot.config.schema import SkillsConfig
     from mindbot.generation.dynamic_manager import DynamicToolManager
+    from mindbot.memory.curator import MemoryCurator
     from mindbot.memory.manager import MemoryManager
     from mindbot.session.store import SessionJournal
     from mindbot.skills.registry import SkillRegistry
@@ -74,6 +78,12 @@ def _normalize_registered_tool(tool: Any) -> Any:
     )
 
 
+def _message_text(content: str | MessageContent) -> str:
+    if isinstance(content, str):
+        return content
+    return "".join(part.text for part in content if isinstance(part, TextPart))
+
+
 @dataclass(frozen=True)
 class _TurnExecutionContext:
     """Runtime resources derived for one chat turn."""
@@ -105,9 +115,12 @@ class Agent:
         system_prompt: str = "",
         context_config: ContextConfig | None = None,
         memory: "MemoryManager | None" = None,
+        memory_curator: "MemoryCurator | None" = None,
         memory_top_k: int = 5,
         tool_persistence: ToolPersistence = "none",
         max_iterations: int = 20,
+        task_progress_policy: str = "stop",
+        task_progress_review_after: int | None = None,
         max_sessions: int = 1000,
         capability_facade: "CapabilityFacade | None" = None,
         tool_backend: "ToolBackend | None" = None,
@@ -119,9 +132,12 @@ class Agent:
         self.llm = llm
         self.system_prompt = system_prompt
         self.memory = memory
+        self._memory_curator = memory_curator
         self._memory_top_k = memory_top_k
         self._tool_persistence = tool_persistence
         self._max_iterations = max_iterations
+        self._task_progress_policy = task_progress_policy
+        self._task_progress_review_after = task_progress_review_after
         self._max_sessions = max_sessions
         self._context_config = context_config or ContextConfig()
         self._capability_facade = capability_facade
@@ -138,6 +154,7 @@ class Agent:
         # Session-keyed caches (LRU via OrderedDict)
         self._sessions: OrderedDict[str, ContextManager] = OrderedDict()
         self._turn_engines: OrderedDict[str, TurnEngine] = OrderedDict()
+        self._task_states: OrderedDict[str, TaskState] = OrderedDict()
         # frozenset[tuple[name, id]] – detects same-name tool replacement
         self._turn_engine_tool_signatures: dict[
             str,
@@ -236,6 +253,8 @@ class Agent:
         if self._journal is not None and self._journal.session_exists(session_id):
             entries = self._journal.read(session_id)
             for entry in entries:
+                if entry.is_meta:
+                    continue
                 try:
                     msg = entry.to_message()
                     ctx.add_conversation(msg)
@@ -249,10 +268,42 @@ class Agent:
             evicted = next(iter(self._sessions))
             self._sessions.pop(evicted)
             self._turn_engines.pop(evicted, None)
+            self._task_states.pop(evicted, None)
             self._turn_engine_tool_signatures.pop(evicted, None)
             logger.debug("agent.session.evict agent={} evicted={}", self.name, evicted)
 
         return ctx
+
+    def _get_task_state(self, session_id: str) -> TaskState:
+        """Return the TaskState for *session_id*, creating it if needed."""
+        if session_id in self._task_states:
+            self._task_states.move_to_end(session_id)
+            return self._task_states[session_id]
+
+        task_state = self._restore_task_state(session_id) or TaskState()
+        self._task_states[session_id] = task_state
+        if len(self._task_states) > self._max_sessions:
+            evicted = next(iter(self._task_states))
+            self._task_states.pop(evicted)
+        return task_state
+
+    def _restore_task_state(self, session_id: str) -> TaskState | None:
+        """Restore the latest task-state meta entry from the journal."""
+        if self._journal is None or not self._journal.session_exists(session_id):
+            return None
+        for entry in reversed(self._journal.read(session_id)):
+            if entry.is_meta and entry.message_kind == "task_state":
+                try:
+                    payload = json.loads(entry.content or "{}")
+                    if isinstance(payload, dict):
+                        return TaskState.from_dict(payload)
+                except Exception as exc:
+                    logger.warning(
+                        "agent.task_state.restore_skip agent={} session={}: {}",
+                        self.name, session_id, exc,
+                    )
+                return None
+        return None
 
     def _get_session_input_builder(self, session_id: str) -> InputBuilder:
         """Build an :class:`~mindbot.agent.input_builder.InputBuilder` for *session_id*."""
@@ -334,6 +385,8 @@ class Agent:
                 llm=self.llm,
                 tools=turn_context.tools,
                 max_iterations=self._max_iterations,
+                task_progress_policy=self._task_progress_policy,
+                task_progress_review_after=self._task_progress_review_after,
                 capability_facade=turn_context.capability_facade,
             )
             self._turn_engines[session_id] = turn_engine
@@ -351,6 +404,7 @@ class Agent:
         writer = PersistenceWriter(
             context=context,
             memory=self.memory,
+            memory_curator=self._memory_curator,
             journal=self._journal,
             tool_persistence=self._tool_persistence,
             system_prompt=self.system_prompt,
@@ -361,7 +415,7 @@ class Agent:
     async def _run_turn(
         self,
         *,
-        message: str,
+        message: str | MessageContent,
         session_id: str,
         turn_context: _TurnExecutionContext,
         on_event: Callable[[AgentEvent], None] | None = None,
@@ -370,11 +424,18 @@ class Agent:
         set_log_context(session_id=session_id)
         logger.debug(
             "_run_turn.start agent={} session={} tools={} msg_len={}",
-            self.name, session_id, len(turn_context.tools), len(message),
+            self.name, session_id, len(turn_context.tools), len(_message_text(message)),
         )
 
         input_builder = self._get_session_input_builder(session_id)
-        messages = await input_builder.build(message, session_id=session_id)
+        user_text = _message_text(message)
+        task_state = self._get_task_state(session_id)
+        task_state.before_turn(user_text)
+        messages = await input_builder.build(
+            message,
+            session_id=session_id,
+            intent_state=task_state.render(),
+        )
         user_timestamp = messages[-1].timestamp if messages and messages[-1].role == "user" else None
         logger.debug("_run_turn.context_built session={} messages={}", session_id, len(messages))
 
@@ -390,7 +451,7 @@ class Agent:
 
         writer = self._get_persistence_writer(session_id)
         writer.commit_turn(
-            message,
+            user_text,
             response,
             session_id=session_id,
             user_timestamp=user_timestamp,
@@ -400,6 +461,8 @@ class Agent:
             ctx = self._get_session_context(session_id)
             await self._detect_and_repair_context(ctx, message, response)
 
+        task_state.after_turn(response)
+        writer.commit_task_state(session_id, task_state)
         logger.debug("_run_turn.persisted session={} stop_reason={}", session_id, response.stop_reason)
         return response
 
@@ -409,7 +472,7 @@ class Agent:
 
     async def chat(
         self,
-        message: str,
+        message: str | MessageContent,
         session_id: str = "default",
         on_event: Callable[[AgentEvent], None] | None = None,
         tools: list[Any] | None = None,
@@ -446,7 +509,7 @@ class Agent:
 
     async def chat_stream(
         self,
-        message: str,
+        message: str | MessageContent,
         session_id: str = "default",
         tools: list[Any] | None = None,
     ) -> AsyncIterator[str]:
@@ -461,13 +524,20 @@ class Agent:
         set_log_context(session_id=session_id)
         turn_context = self._build_turn_context(tools)
         input_builder = self._get_session_input_builder(session_id)
-        messages = await input_builder.build(message, session_id=session_id)
+        user_text = _message_text(message)
+        task_state = self._get_task_state(session_id)
+        task_state.before_turn(user_text)
+        messages = await input_builder.build(
+            message,
+            session_id=session_id,
+            intent_state=task_state.render(),
+        )
         user_timestamp = messages[-1].timestamp if messages and messages[-1].role == "user" else None
         turn_engine = self._get_turn_engine(session_id, turn_context)
 
         logger.debug(
             "chat_stream.start agent={} session={} tools={} msg_len={}",
-            self.name, session_id, len(turn_context.tools), len(message),
+            self.name, session_id, len(turn_context.tools), len(_message_text(message)),
         )
 
         async for chunk in turn_engine.run_stream(messages):
@@ -477,7 +547,7 @@ class Agent:
         response = turn_engine.last_stream_response
         writer = self._get_persistence_writer(session_id)
         writer.commit_turn(
-            message,
+            user_text,
             response,
             session_id=session_id,
             user_timestamp=user_timestamp,
@@ -487,6 +557,8 @@ class Agent:
             ctx = self._get_session_context(session_id)
             await self._detect_and_repair_context(ctx, message, response)
 
+        task_state.after_turn(response)
+        writer.commit_task_state(session_id, task_state)
         logger.info(
             "chat_stream.finish agent={} session={} stop_reason={}",
             self.name, session_id, response.stop_reason,
@@ -496,6 +568,7 @@ class Agent:
         """Clear all context for *session_id*."""
         ctx = self._get_session_context(session_id)
         ctx.clear()
+        self._task_states.pop(session_id, None)
 
     async def compact_context(self, session_id: str = "default") -> int:
         """Force compress the conversation block for *session_id*.

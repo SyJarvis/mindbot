@@ -52,17 +52,24 @@ class ModelConfig(BaseModel):
     ``role`` distinguishes how the model is used in the pipeline:
 
     - ``"chat"``  — conversational / instruction-following (default)
+    - ``"vision"`` — multimodal image understanding
     - ``"embed"`` — embedding / vector representation only
 
     OCR and rerank roles are reserved for future use.
     """
 
     id: str
-    role: Literal["chat", "embed"] = "chat"
+    role: Literal["chat", "vision", "embed"] = "chat"
     vision: bool = False
     tool: bool = True
     level: str = "medium"
     enabled: bool = True
+
+    @model_validator(mode="after")
+    def _role_implies_capabilities(self) -> "ModelConfig":
+        if self.role == "vision":
+            self.vision = True
+        return self
 
 
 class EndpointConfig(BaseModel):
@@ -381,6 +388,15 @@ class AgentConfig(BaseModel):
         ge=0,
         description="Number of memory chunks retrieved per turn by the Scheduler.",
     )
+    task_progress_policy: Literal["stop", "ask"] = Field(
+        default="ask",
+        description="How to handle long-running tasks that still need more tool work.",
+    )
+    task_progress_review_after: int = Field(
+        default=15,
+        ge=1,
+        description="When task_progress_policy='ask', request user confirmation after this many tool iterations.",
+    )
     max_sessions: int = Field(
         default=1000,
         ge=1,
@@ -444,6 +460,16 @@ class ForgetPolicyConfig(BaseModel):
     cycle_interval_hours: int = Field(default=24, ge=1)
 
 
+class MemoryCurationConfig(BaseModel):
+    """Rules for promoting conversation turns into long-term memory."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = True
+    mode: Literal["rules"] = "rules"
+    min_importance: float = Field(default=0.65, ge=0.0, le=1.0)
+
+
 class MemoryConfig(BaseModel):
     """Memory subsystem settings — four-tier structure."""
 
@@ -462,6 +488,9 @@ class MemoryConfig(BaseModel):
 
     # Forget policy
     forget_policy: ForgetPolicyConfig = Field(default_factory=ForgetPolicyConfig)
+
+    # Conversation-to-memory curation
+    curation: MemoryCurationConfig = Field(default_factory=MemoryCurationConfig)
 
     # Retrieval settings
     retrieval_top_k: int = Field(default=5, ge=1, le=50)

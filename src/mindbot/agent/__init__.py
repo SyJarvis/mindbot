@@ -10,6 +10,7 @@ from mindbot.agent.models import (
     StopReason,
     TurnResult,
 )
+from mindbot.agent.task_state import TaskState
 from mindbot.agent.multi_agent import MultiAgentOrchestrator
 from mindbot.agent.core import MindAgent
 from mindbot.agent.input_builder import InputBuilder
@@ -27,6 +28,7 @@ __all__ = [
     # Models
     "LoopConfig",
     "StopReason",
+    "TaskState",
     "TurnResult",
     "AgentEvent",
     "AgentResponse",
