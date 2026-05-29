@@ -32,6 +32,10 @@ async def test_real_mindagent_chat_list_research_dir() -> None:
     config = load_config(config_file)
     config.agent.approval.ask = ToolAskMode.OFF  # 测试中不等待审批，避免卡住
     bot = MindBot(config=config)
+
+    if bot._agent is None:
+        pytest.skip("Agent not initialized — API key or provider not configured")
+
     response = await bot.chat(USER_MESSAGE, session_id="test_list_research")
 
     print("\n" + "=" * 60)

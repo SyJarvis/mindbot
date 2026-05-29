@@ -83,11 +83,15 @@ sys.modules["mindbot.memory.storage.vector_store"] = vs_mod
 sys.modules["mindbot.memory.storage.lance_store"] = lance_mod
 
 # Register embedder (lazy, since we don't need it for these tests)
-embedder_base = load_module("mindbot.memory.embedder.base", src_path / "mindbot" / "memory" / "embedder" / "base.py")
-embedder_init = type(sys)("mindbot.memory.embedder")
-embedder_init.Embedder = embedder_base.Embedder
-sys.modules["mindbot.memory.embedder"] = embedder_init
-sys.modules["mindbot.memory.embedder.base"] = embedder_base
+embedder_base = load_module(
+    "mindbot.providers.embeddings.base",
+    src_path / "mindbot" / "providers" / "embeddings" / "base.py",
+)
+sys.modules.setdefault("mindbot.providers", type(sys)("mindbot.providers"))
+embeddings_init = type(sys)("mindbot.providers.embeddings")
+embeddings_init.Embedder = embedder_base.Embedder
+sys.modules["mindbot.providers.embeddings"] = embeddings_init
+sys.modules["mindbot.providers.embeddings.base"] = embedder_base
 
 # Register retrieval (lazy)
 retrieval_init = type(sys)("mindbot.memory.retrieval")

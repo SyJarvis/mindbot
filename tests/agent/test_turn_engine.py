@@ -330,6 +330,35 @@ class TestMaxIterations:
 
         assert response.stop_reason == StopReason.MAX_TURNS
 
+    @pytest.mark.anyio
+    async def test_task_progress_policy_requests_user_confirmation(self) -> None:
+        responses = []
+        for i in range(5):
+            tc_i = ToolCall(id=f"tc{i}", name="weather", arguments={"city": f"city-{i}"})
+            responses.append(ChatResponse(content="", tool_calls=[tc_i], finish_reason="tool_calls"))
+
+        llm = FakeLLMAdapter(responses)
+        facade = FakeCapabilityFacade({"weather": "result"})
+        engine = TurnEngine(
+            llm=llm,
+            tools=[FakeTool()],
+            max_iterations=5,
+            task_progress_policy="ask",
+            task_progress_review_after=2,
+            capability_facade=facade,
+        )
+        events: list[AgentEvent] = []
+
+        response = await engine.run(
+            messages=[Message(role="user", content="go")],
+            on_event=events.append,
+        )
+
+        assert response.stop_reason == StopReason.USER_INPUT_NEEDED
+        assert "current progress" in response.content
+        assert response.message_trace[-1].stop_reason == StopReason.USER_INPUT_NEEDED.value
+        assert any(event.type.value == "user_input_request" for event in events)
+
 
 # ---------------------------------------------------------------------------
 # Event emission

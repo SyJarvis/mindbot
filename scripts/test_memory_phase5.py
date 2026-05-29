@@ -100,8 +100,9 @@ lifecycle_init.MemoryPromoter = promoter_mod.MemoryPromoter
 sys.modules["mindbot.memory.lifecycle"] = lifecycle_init
 
 # Embedder stub
-embedder_init = type(sys)("mindbot.memory.embedder")
-sys.modules["mindbot.memory.embedder"] = embedder_init
+sys.modules.setdefault("mindbot.providers", type(sys)("mindbot.providers"))
+embeddings_init = type(sys)("mindbot.providers.embeddings")
+sys.modules["mindbot.providers.embeddings"] = embeddings_init
 sys.modules["mindbot.memory.retrieval"] = type(sys)("mindbot.memory.retrieval")
 
 # Manager

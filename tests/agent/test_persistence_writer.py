@@ -18,6 +18,8 @@ from mindbot.agent.persistence_writer import PersistenceWriter
 from mindbot.config.schema import ContextConfig
 from mindbot.context.manager import ContextManager
 from mindbot.context.models import Message, ProviderInfo, ToolCall, UsageInfo
+from mindbot.memory.curator import MemoryCurator
+from mindbot.agent.task_state import TaskState
 
 
 # ---------------------------------------------------------------------------
@@ -27,10 +29,18 @@ from mindbot.context.models import Message, ProviderInfo, ToolCall, UsageInfo
 
 class FakeMemoryManager:
     def __init__(self) -> None:
-        self.writes: list[str] = []
+        self.writes: list[tuple[str, str]] = []
 
     def append_to_short_term(self, content: str, **kw: Any) -> list[Any]:
-        self.writes.append(content)
+        self.writes.append(("short_term", content))
+        return []
+
+    def append_preference(self, content: str, **kw: Any) -> list[Any]:
+        self.writes.append(("preference", content))
+        return []
+
+    def promote_to_long_term(self, content: str, **kw: Any) -> list[Any]:
+        self.writes.append(("long_term", content))
         return []
 
 
@@ -163,22 +173,54 @@ class TestToolPersistence:
 
 class TestMemoryCommit:
 
-    def test_writes_user_and_assistant_to_memory(
+    def test_plain_turn_does_not_write_memory(
         self, ctx: ContextManager, memory: FakeMemoryManager,
     ) -> None:
-        writer = PersistenceWriter(context=ctx, memory=memory)
+        writer = PersistenceWriter(
+            context=ctx,
+            memory=memory,
+            memory_curator=MemoryCurator(),
+        )
         writer.commit_turn("hello", _make_response("world"))
 
-        assert len(memory.writes) == 2
-        assert "User: hello" in memory.writes[0]
-        assert "Assistant: world" in memory.writes[1]
+        assert memory.writes == []
+
+    def test_preference_turn_writes_curated_memory(
+        self, ctx: ContextManager, memory: FakeMemoryManager,
+    ) -> None:
+        writer = PersistenceWriter(
+            context=ctx,
+            memory=memory,
+            memory_curator=MemoryCurator(),
+        )
+        writer.commit_turn("我以后用 Python 做数据分析", _make_response("好的"))
+
+        assert memory.writes == [
+            ("preference", "我以后用 Python 做数据分析"),
+        ]
+
+    def test_decision_turn_writes_long_term_memory(
+        self, ctx: ContextManager, memory: FakeMemoryManager,
+    ) -> None:
+        writer = PersistenceWriter(
+            context=ctx,
+            memory=memory,
+            memory_curator=MemoryCurator(),
+        )
+        writer.commit_turn("决定采用 memory curator 方案", _make_response("已记录"))
+
+        assert ("long_term", "决定采用 memory curator 方案") in memory.writes
 
     def test_no_op_without_memory(self, ctx: ContextManager) -> None:
         writer = PersistenceWriter(context=ctx, memory=None)
         writer.commit_turn("hello", _make_response("world"))
 
     def test_memory_failure_is_graceful(self, ctx: ContextManager) -> None:
-        writer = PersistenceWriter(context=ctx, memory=FailingMemory())
+        writer = PersistenceWriter(
+            context=ctx,
+            memory=FailingMemory(),
+            memory_curator=MemoryCurator(),
+        )
         writer.commit_turn("hello", _make_response("world"))
 
 
@@ -298,6 +340,19 @@ class TestJournalCommit:
         assert [m.role for m in msgs] == ["system", "user", "assistant"]
         assert msgs[1].timestamp == 10.0
         assert msgs[-1].content == "world"
+
+    def test_commit_task_state_writes_meta_message(
+        self, ctx: ContextManager, journal: FakeJournal,
+    ) -> None:
+        writer = PersistenceWriter(context=ctx, journal=journal)
+
+        writer.commit_task_state("s1", TaskState(goal="ship feature"))
+
+        assert len(journal.entries) == 1
+        msg = journal.entries[0].messages[0]
+        assert msg.is_meta is True
+        assert msg.message_kind == "task_state"
+        assert "ship feature" in msg.content
 
 
 # ---------------------------------------------------------------------------

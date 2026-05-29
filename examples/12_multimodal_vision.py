@@ -21,9 +21,6 @@ import asyncio
 import base64
 from pathlib import Path
 
-from mindbot.context.models import Message, TextPart, ImagePart
-
-
 def load_image_source(source: str) -> tuple[str, str]:
     """Load image from file path or URL.
 
@@ -111,30 +108,27 @@ async def main() -> None:
     print(f"Loading image: {args.image}")
     image_data, mime_type = load_image_source(args.image)
 
-    # 构建多模态消息
-    message = Message(
-        role="user",
-        content=[
-            TextPart(text=args.question),
-            ImagePart(data=image_data, mime_type=mime_type),
-        ],
-    )
-
     print(f"\nUser: {args.question}")
     print("-" * 60)
 
-    # 使用 Provider 进行多模态对话
-    # 路由器会自动检测图片并选择支持 vision 的模型
-    from mindbot.builders import create_llm
+    from mindbot import MindBot
+    from mindbot.multimodal.models import ContentInput, ContentItem, MediaType
 
-    provider = create_llm(config)
-    response = await provider.chat([message])
+    bot = MindBot(config=config)
+    content = ContentInput(
+        text=args.question,
+        images=[
+            ContentItem(
+                type=MediaType.IMAGE,
+                source=image_data,
+                mime_type=mime_type,
+            )
+        ],
+    )
+    response = await bot.chat(content)
 
     print(f"Assistant: {response.content}")
-    print(f"\nStop reason: {response.finish_reason}")
-
-    if response.usage:
-        print(f"Tokens: prompt={response.usage.prompt_tokens}, completion={response.usage.completion_tokens}, total={response.usage.total_tokens}")
+    print(f"\nStop reason: {response.stop_reason}")
 
 
 if __name__ == "__main__":

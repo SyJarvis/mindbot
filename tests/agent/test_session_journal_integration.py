@@ -129,6 +129,14 @@ def _make_agent(config: Config, fake_llm: FakeLLM | None = None) -> MindAgent:
     return agent
 
 
+def _visible_messages(msgs):
+    return [m for m in msgs if not m.is_meta]
+
+
+def _task_state_messages(msgs):
+    return [m for m in msgs if m.is_meta and m.message_kind == "task_state"]
+
+
 @pytest.fixture()
 def anyio_backend() -> str:
     return "asyncio"
@@ -148,16 +156,18 @@ async def test_chat_writes_system_user_assistant(tmp_path):
 
     journal = SessionJournal(tmp_path / "journal")
     msgs = journal.read("s1")
+    visible = _visible_messages(msgs)
 
-    roles = [m.role for m in msgs]
+    roles = [m.role for m in visible]
     assert roles == ["system", "user", "assistant"]
-    assert msgs[0].content == "You are helpful."
-    assert msgs[1].content == "hello"
-    assert msgs[2].content == "mock reply"
-    assert msgs[2].message_kind == "assistant_text"
-    assert msgs[2].stop_reason == "completed"
-    assert msgs[2].turn_id is not None
-    assert msgs[1].timestamp <= msgs[2].timestamp
+    assert visible[0].content == "You are helpful."
+    assert visible[1].content == "hello"
+    assert visible[2].content == "mock reply"
+    assert visible[2].message_kind == "assistant_text"
+    assert visible[2].stop_reason == "completed"
+    assert visible[2].turn_id is not None
+    assert visible[1].timestamp <= visible[2].timestamp
+    assert len(_task_state_messages(msgs)) == 1
 
 
 @pytest.mark.anyio
@@ -170,10 +180,12 @@ async def test_chat_system_prompt_only_on_first_turn(tmp_path):
 
     journal = SessionJournal(tmp_path / "journal")
     msgs = journal.read("s1")
+    visible = _visible_messages(msgs)
 
-    system_msgs = [m for m in msgs if m.role == "system"]
+    system_msgs = [m for m in visible if m.role == "system"]
     assert len(system_msgs) == 1
-    assert msgs[0].role == "system"
+    assert visible[0].role == "system"
+    assert len(_task_state_messages(msgs)) == 2
 
 
 @pytest.mark.anyio
@@ -187,7 +199,7 @@ async def test_chat_multi_turn_ordering(tmp_path):
     journal = SessionJournal(tmp_path / "journal")
     msgs = journal.read("s1")
 
-    roles = [m.role for m in msgs]
+    roles = [m.role for m in _visible_messages(msgs)]
     assert roles == ["system", "user", "assistant", "user", "assistant"]
 
 
@@ -201,7 +213,7 @@ async def test_chat_no_system_prompt(tmp_path):
     journal = SessionJournal(tmp_path / "journal")
     msgs = journal.read("s1")
 
-    roles = [m.role for m in msgs]
+    roles = [m.role for m in _visible_messages(msgs)]
     assert roles == ["user", "assistant"]
 
 
@@ -223,15 +235,17 @@ async def test_chat_stream_writes_journal(tmp_path):
 
     journal = SessionJournal(tmp_path / "journal")
     msgs = journal.read("s2")
+    visible = _visible_messages(msgs)
 
-    roles = [m.role for m in msgs]
+    roles = [m.role for m in visible]
     assert roles == ["system", "user", "assistant"]
-    assert msgs[1].content == "stream me"
-    assert msgs[2].content == "mock reply"
-    assert msgs[2].message_kind == "assistant_text"
-    assert msgs[2].stop_reason == "completed"
-    assert msgs[2].turn_id is not None
-    assert msgs[1].timestamp <= msgs[2].timestamp
+    assert visible[1].content == "stream me"
+    assert visible[2].content == "mock reply"
+    assert visible[2].message_kind == "assistant_text"
+    assert visible[2].stop_reason == "completed"
+    assert visible[2].turn_id is not None
+    assert visible[1].timestamp <= visible[2].timestamp
+    assert len(_task_state_messages(msgs)) == 1
 
 
 # ---------------------------------------------------------------------------
@@ -251,8 +265,8 @@ async def test_chat_and_stream_produce_same_roles(tmp_path):
         pass
 
     journal = SessionJournal(tmp_path / "journal")
-    chat_msgs = journal.read("chat")
-    stream_msgs = journal.read("stream")
+    chat_msgs = _visible_messages(journal.read("chat"))
+    stream_msgs = _visible_messages(journal.read("stream"))
     chat_roles = [m.role for m in chat_msgs]
     stream_roles = [m.role for m in stream_msgs]
     assert chat_roles == stream_roles
@@ -286,7 +300,7 @@ async def test_tool_call_preamble_is_not_mixed_into_final_assistant(tmp_path):
     await agent.chat("检查一下", session_id="s1")
 
     journal = SessionJournal(tmp_path / "journal")
-    msgs = journal.read("s1")
+    msgs = _visible_messages(journal.read("s1"))
     assert msgs[-1].role == "assistant"
     assert msgs[-1].content == "最终答案"
 
