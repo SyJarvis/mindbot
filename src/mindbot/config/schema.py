@@ -241,7 +241,7 @@ class ToolApprovalConfig(BaseModel):
         dangerous_tools: List of tools that require extra confirmation
     """
 
-    security: ToolSecurityLevel = ToolSecurityLevel.ALLOWLIST
+    security: ToolSecurityLevel = ToolSecurityLevel.FULL
     ask: ToolAskMode = ToolAskMode.OFF
     timeout: int = Field(default=300, ge=1, le=3600)
     whitelist: dict[str, list[str]] = Field(default_factory=dict)
@@ -352,6 +352,10 @@ class ShellExecutionConfig(BaseModel):
             "backend is unavailable."
         ),
     )
+    block_dangerous_commands: bool = Field(
+        default=False,
+        description="Block lightweight dangerous shell command patterns before execution.",
+    )
 
 
 class AgentConfig(BaseModel):
@@ -374,7 +378,7 @@ class AgentConfig(BaseModel):
         ),
     )
     restrict_to_workspace: bool = Field(
-        default=True,
+        default=False,
         description="Restrict builtin file tools to the configured workspace and allowed system paths.",
     )
     shell_execution: ShellExecutionConfig = Field(default_factory=ShellExecutionConfig)

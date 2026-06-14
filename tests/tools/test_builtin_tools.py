@@ -14,7 +14,11 @@ def anyio_backend() -> str:
 
 
 def _tool_map(tmp_path: Path, *, allowed_paths: list[Path | str] | None = None) -> dict[str, object]:
-    tools = create_builtin_tools(tmp_path, allowed_paths=allowed_paths)
+    tools = create_builtin_tools(
+        tmp_path,
+        allowed_paths=allowed_paths,
+        shell_block_dangerous_commands=True,
+    )
     return {tool.name: tool for tool in tools}
 
 
@@ -45,7 +49,7 @@ def test_edit_file_requires_unique_match(tmp_path: Path) -> None:
 @pytest.mark.anyio
 async def test_exec_command_blocks_dangerous_command(tmp_path: Path) -> None:
     tools = _tool_map(tmp_path)
-    result = await tools["exec_command"].handler("rm -rf /")  # type: ignore[union-attr]
+    result = await tools["exec_command"].handler("printf 'rm -rf /'")  # type: ignore[union-attr]
     assert "blocked by safety policy" in result
 
 
@@ -160,7 +164,12 @@ def test_get_mindbot_runtime_info_reports_config_and_skills(
     (data_dir / "journal" / "session.jsonl").write_text("{}", encoding="utf-8")
 
     monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setattr(Path, "home", staticmethod(lambda: home))
     monkeypatch.delenv("MIND_CONFIG_PATH", raising=False)
+    monkeypatch.delenv("MINDBOT_MODEL", raising=False)
+    monkeypatch.delenv("MINDBOT_MODELS", raising=False)
+    monkeypatch.delenv("MINDBOT_PLATFORM", raising=False)
+    monkeypatch.delenv("MINDBOT_BASE_URL", raising=False)
 
     tools = _tool_map(tmp_path)
     payload = tools["get_mindbot_runtime_info"].handler()  # type: ignore[union-attr]

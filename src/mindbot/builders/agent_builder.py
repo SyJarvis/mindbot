@@ -119,6 +119,7 @@ def create_agent(
             shell_execution_mode=config.agent.shell_execution.policy.value,
             shell_sandbox_provider=config.agent.shell_execution.sandbox_provider.value,
             shell_fail_if_unavailable=config.agent.shell_execution.fail_if_unavailable,
+            shell_block_dangerous_commands=config.agent.shell_execution.block_dangerous_commands,
         )
 
     merged_tools = _merge_tools(builtin_tools, tools or [])

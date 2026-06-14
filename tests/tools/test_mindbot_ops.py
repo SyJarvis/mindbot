@@ -55,6 +55,7 @@ def test_runtime_info_reports_workspace_policy(tmp_path: Path, monkeypatch) -> N
     assert data["config"]["trusted_paths"] == [str(trusted_project)]
     assert data["config"]["shell_execution"]["policy"] == "cwd_guard"
     assert data["config"]["shell_execution"]["sandbox_provider"] == "none"
+    assert data["config"]["shell_execution"]["block_dangerous_commands"] is False
     assert data["system"]["workspace"] == str(workspace)
     assert data["system"]["effective_workspace"] == str(trusted_project)
     assert data["system"]["session_cwd"] == str(trusted_project)
