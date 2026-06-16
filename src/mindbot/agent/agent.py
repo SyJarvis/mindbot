@@ -16,12 +16,12 @@ from __future__ import annotations
 import re
 import json
 from collections import OrderedDict
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from mindbot.agent.input_builder import InputBuilder
-from mindbot.agent.models import AgentEvent, AgentResponse
+from mindbot.agent.models import AgentEvent, AgentResponse, RuntimeRequest
 from mindbot.agent.persistence_writer import PersistenceWriter, ToolPersistence
 from mindbot.agent.task_state import TaskState
 from mindbot.agent.turn_engine import TurnEngine
@@ -119,8 +119,8 @@ class Agent:
         memory_top_k: int = 5,
         tool_persistence: ToolPersistence = "none",
         max_iterations: int = 20,
-        task_progress_policy: str = "stop",
-        task_progress_review_after: int | None = None,
+        task_progress_policy: str = "ask",
+        task_progress_review_after: int | None = 15,
         max_sessions: int = 1000,
         capability_facade: "CapabilityFacade | None" = None,
         tool_backend: "ToolBackend | None" = None,
@@ -419,6 +419,9 @@ class Agent:
         session_id: str,
         turn_context: _TurnExecutionContext,
         on_event: Callable[[AgentEvent], None] | None = None,
+        on_user_input_request: Callable[[str, str], Awaitable[str]] | None = None,
+        on_runtime_request: Callable[[RuntimeRequest], Awaitable[str]] | None = None,
+        on_pending_user_input: Callable[[], Awaitable[list[str]]] | None = None,
     ) -> AgentResponse:
         """Run one turn through the shared execution path."""
         set_log_context(session_id=session_id)
@@ -444,6 +447,9 @@ class Agent:
             response = await turn_engine.run(
                 messages=messages,
                 on_event=on_event,
+                on_user_input_request=on_user_input_request,
+                on_runtime_request=on_runtime_request,
+                on_pending_user_input=on_pending_user_input,
             )
         except Exception:
             logger.exception("_run_turn.error agent={} session={}", self.name, session_id)
@@ -475,6 +481,9 @@ class Agent:
         message: str | MessageContent,
         session_id: str = "default",
         on_event: Callable[[AgentEvent], None] | None = None,
+        on_user_input_request: Callable[[str, str], Awaitable[str]] | None = None,
+        on_runtime_request: Callable[[RuntimeRequest], Awaitable[str]] | None = None,
+        on_pending_user_input: Callable[[], Awaitable[list[str]]] | None = None,
         tools: list[Any] | None = None,
     ) -> AgentResponse:
         """Non-streaming chat with tool support and memory integration.
@@ -496,6 +505,9 @@ class Agent:
             session_id=session_id,
             turn_context=turn_context,
             on_event=on_event,
+            on_user_input_request=on_user_input_request,
+            on_runtime_request=on_runtime_request,
+            on_pending_user_input=on_pending_user_input,
         )
 
         logger.info(

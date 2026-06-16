@@ -28,8 +28,8 @@ from mindbot.cli.shell.context import (
     prompt_trust_session_cwd_with_natural_language,
     build_shell_turn_tools,
 )
-from mindbot.wire import Wire
 from mindbot.logging import logger
+from mindbot.runtime import RuntimeEventType, RuntimeOp, RuntimeSession
 
 console = Console()
 
@@ -62,6 +62,7 @@ class Shell:
         self._tui: Any = None
         self._tool_starts: dict[str, float] = {}
         self._text_buffer: Any = ""
+        self._runtime = RuntimeSession(bot)
 
     async def run(self) -> None:
         """运行交互式 shell 主循环。"""
@@ -129,6 +130,17 @@ class Shell:
             self._tui.exit()
             return
 
+        pending_request_id = self._runtime.pending_user_input_request_id
+        if pending_request_id is not None:
+            self._tui.add_user_input(stripped)
+            await self._runtime.submit(RuntimeOp.user_input_answer(pending_request_id, stripped))
+            return
+
+        if self._runtime.is_running():
+            self._tui.add_user_input(stripped)
+            await self._runtime.submit(RuntimeOp.pending_user_input(stripped))
+            return
+
         # Slash commands
         if stripped.startswith("/"):
             try:
@@ -157,31 +169,34 @@ class Shell:
         self._tool_starts.clear()
         self._text_buffer = _TuiTextState()
 
-        wire = Wire()
         turn_tools = build_shell_turn_tools(self.bot, self.shell_ctx)
         tokens_before = self.bot.get_conversation_token_count(self.session_id)
-
-        async def _chat_and_close() -> Any:
-            try:
-                return await self.bot.chat(
-                    message,
-                    session_id=self.session_id,
-                    tools=turn_tools,
-                    on_event=wire.send,
-                )
-            except Exception as exc:
-                self._last_error = exc
-            finally:
-                wire.close()
-
-        self._chat_task = asyncio.create_task(_chat_and_close())
         _had_thinking = False
 
         try:
-            async for event in wire.receive():
+            op_id = await self._runtime.submit(RuntimeOp.user_turn(
+                message,
+                session_id=self.session_id,
+                tools=turn_tools,
+            ))
+            self._chat_task = self._runtime.current_task
+            while True:
                 # Check for Ctrl-C interrupt
-                if self._tui.interrupted and self._chat_task and not self._chat_task.done():
-                    self._chat_task.cancel()
+                if self._tui.interrupted and self._runtime.is_running():
+                    await self._runtime.submit(RuntimeOp.interrupt())
+
+                runtime_event = await self._runtime.next_event()
+                if runtime_event.op_id != op_id:
+                    continue
+                if runtime_event.type == RuntimeEventType.AGENT_EVENT and runtime_event.agent_event is not None:
+                    event = runtime_event.agent_event
+                elif runtime_event.type == RuntimeEventType.ERROR:
+                    raise RuntimeError(str(runtime_event.data.get("message", "Runtime error")))
+                elif runtime_event.type == RuntimeEventType.TURN_COMPLETE:
+                    break
+                else:
+                    await asyncio.sleep(0.001)
+                    continue
 
                 self._text_buffer, _had_thinking = _handle_tui_event(
                     self._tui, event, self._tool_starts, self._text_buffer,
@@ -209,6 +224,10 @@ class Shell:
             pct = (tokens_after / max_tokens * 100) if max_tokens > 0 else 0
             self._tui.add_turn_summary(elapsed_sec, tokens_used, pct)
 
+            queued_inputs = self._runtime.drain_queued_user_inputs_now()
+            for queued_input in queued_inputs:
+                await self._run_tui_turn(queued_input)
+
     # ── Status ─────────────────────────────────────────────────────────────
 
     def _get_status(self) -> StatusSnapshot:
@@ -228,7 +247,7 @@ class Shell:
             context_usage=context_usage,
             context_tokens=context_tokens,
             max_context_tokens=max_context_tokens,
-            queued_count=0,
+            queued_count=self._runtime.queued_count,
         )
 
 
@@ -283,12 +302,14 @@ def _handle_tui_event(
 
     if event_type == EventType.THINKING:
         tui.finalize_delta()
+        text_buffer.clear_pending_line()
         if not had_thinking:
             tui.add_thinking()
             had_thinking = True
 
     elif event_type == EventType.TOOL_EXECUTING:
         tui.finalize_delta()
+        text_buffer.clear_pending_line()
         tool = event.data.get("tool_name", "unknown")
         args_hint = _tool_args_hint(event.data.get("arguments"))
         tool_starts[tool] = time.monotonic()
@@ -313,8 +334,16 @@ def _handle_tui_event(
 
     elif event_type == EventType.ERROR:
         tui.finalize_delta()
+        text_buffer.clear_pending_line()
         msg = event.data.get("message", "Unknown error")
         tui.add_error(msg)
+
+    elif event_type == EventType.USER_INPUT_REQUEST:
+        tui.finalize_delta()
+        text_buffer.clear_pending_line()
+        question = event.data.get("question", "")
+        if question:
+            tui.add_review_prompt(question)
 
     elif event_type == EventType.COMPLETE:
         tui.finalize_delta()

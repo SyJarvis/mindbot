@@ -590,6 +590,15 @@ class MemoryManager:
             metadata=index.metadata,
         )
 
+    def set_permanent(self, shard_id: str, permanent: bool = True) -> bool:
+        """Set the permanent flag for a stored shard."""
+        index = self._index_store.get_shard_index(shard_id)
+        if index is None:
+            return False
+        index.is_permanent = permanent
+        self._index_store.update_shard_index(shard_id, index)
+        return True
+
     # ------------------------------------------------------------------
     # Maintenance Operations (API Compatible)
     # ------------------------------------------------------------------

@@ -10,11 +10,11 @@ MindAgent acts as a Supervisor that:
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
 from mindbot.agent.agent import Agent
-from mindbot.agent.models import AgentEvent, AgentResponse, TurnResult
+from mindbot.agent.models import AgentEvent, AgentResponse, RuntimeRequest, TurnResult
 from mindbot.builders import create_agent, create_llm
 from mindbot.capability.backends.tooling import ToolRegistry
 from mindbot.config.schema import Config
@@ -167,6 +167,9 @@ class MindAgent:
         message: str | MessageContent,
         session_id: str = "default",
         on_event: Callable[[AgentEvent], None] | None = None,
+        on_user_input_request: Callable[[str, str], Awaitable[str]] | None = None,
+        on_runtime_request: Callable[[RuntimeRequest], Awaitable[str]] | None = None,
+        on_pending_user_input: Callable[[], Awaitable[list[str]]] | None = None,
         tools: list[Any] | None = None,
     ) -> AgentResponse:
         """Primary async chat entry point.
@@ -186,6 +189,9 @@ class MindAgent:
             message=message,
             session_id=session_id,
             on_event=on_event,
+            on_user_input_request=on_user_input_request,
+            on_runtime_request=on_runtime_request,
+            on_pending_user_input=on_pending_user_input,
             tools=tools,
         )
 
@@ -224,7 +230,9 @@ class MindAgent:
     def add_to_memory(self, content: str, permanent: bool = False) -> None:
         """Add *content* to the main agent's memory."""
         if permanent:
-            self._main_agent.memory.promote_to_long_term(content)
+            shards = self._main_agent.memory.promote_to_long_term(content)
+            for shard in shards:
+                self._main_agent.memory.set_permanent(shard.id)
         else:
             self._main_agent.memory.append_to_short_term(content)
 

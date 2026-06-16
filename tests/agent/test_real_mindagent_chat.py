@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -21,9 +22,12 @@ USER_MESSAGE = "查看~/research目录下有啥文件..."
 @pytest.mark.asyncio
 async def test_real_mindagent_chat_list_research_dir() -> None:
     """用真实 MindAgent 发送「查看~/research目录下有啥文件」，打印 AI 回复。"""
+    if os.environ.get("MINDBOT_RUN_INTEGRATION") != "1":
+        pytest.skip("Set MINDBOT_RUN_INTEGRATION=1 to run real provider integration tests")
+
     config_file = Path.home() / ".mindbot" / "settings.json"
     if not config_file.exists():
-        pytest.skip(f"Config not found: {config_file} (run mindbot generate-config)")
+        pytest.skip(f"Config not found: {config_file}")
 
     from mindbot.bot import MindBot
     from mindbot.config.loader import load_config

@@ -10,10 +10,10 @@ from __future__ import annotations
 import asyncio
 import time
 import uuid
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
-from mindbot.agent.models import AgentEvent, AgentResponse, StopReason
+from mindbot.agent.models import AgentEvent, AgentResponse, EventType, RuntimeRequest, StopReason
 from mindbot.agent.streaming import StreamingExecutor
 from mindbot.context.models import Message, ToolCall
 from mindbot.logging import logger, set_log_context
@@ -34,8 +34,8 @@ class TurnEngine:
         tools: list["Tool"] | None = None,
         *,
         max_iterations: int = 20,
-        task_progress_policy: str = "stop",
-        task_progress_review_after: int | None = None,
+        task_progress_policy: str = "ask",
+        task_progress_review_after: int | None = 15,
         capability_facade: "CapabilityFacade | None" = None,
     ) -> None:
         self._llm = llm
@@ -46,6 +46,7 @@ class TurnEngine:
         self._capability_facade = capability_facade
         self._streaming_executor = StreamingExecutor(llm)
         self._last_stream_response: AgentResponse | None = None
+        self._last_event_response: AgentResponse | None = None
 
     # ------------------------------------------------------------------
     # 非流式接口（供 chat() 使用）
@@ -55,55 +56,24 @@ class TurnEngine:
         self,
         messages: list[Message],
         on_event: Callable[[AgentEvent], None] | None = None,
+        on_user_input_request: Callable[[str, str], Awaitable[str]] | None = None,
+        on_runtime_request: Callable[[RuntimeRequest], Awaitable[str]] | None = None,
+        on_pending_user_input: Callable[[], Awaitable[list[str]]] | None = None,
         turn_id: str | None = None,
     ) -> AgentResponse:
         """完整执行 turn，返回 AgentResponse。"""
-        resolved_turn_id = turn_id or uuid.uuid4().hex
-        set_log_context(turn_id=resolved_turn_id)
-
-        response = AgentResponse(content="")
-        response.metadata["turn_id"] = resolved_turn_id
-        initial_len = len(messages)
-        t0 = time.monotonic()
-
-        logger.debug("turn.start turn_id={} messages={} tools={}", resolved_turn_id, initial_len, len(self._tools))
-
-        try:
-            for iteration in range(self._max_iterations):
-                logger.debug("turn.iteration.start turn_id={} iteration={}", resolved_turn_id, iteration)
-                should_continue, messages = await self._execute_iteration(
-                    messages=messages,
-                    iteration=iteration,
-                    on_event=on_event,
-                    response=response,
-                    turn_id=resolved_turn_id,
-                )
-                logger.debug("turn.iteration.finish turn_id={} iteration={} continue={}", resolved_turn_id, iteration, should_continue)
-                if not should_continue:
-                    break
-            else:
-                response.stop_reason = StopReason.MAX_TURNS
-                if on_event:
-                    on_event(AgentEvent.complete(response.stop_reason))
-
-            if on_event and response.stop_reason == StopReason.COMPLETED:
-                on_event(AgentEvent.complete(response.stop_reason))
-
-        except Exception as exc:
-            logger.error("turn.error turn_id={} {}", resolved_turn_id, exc)
-            response.stop_reason = StopReason.ERROR
+        async for event in self.run_events(
+            messages,
+            on_user_input_request=on_user_input_request,
+            on_runtime_request=on_runtime_request,
+            on_pending_user_input=on_pending_user_input,
+            turn_id=turn_id,
+        ):
             if on_event:
-                on_event(AgentEvent.error(str(exc)))
-
-        elapsed = time.monotonic() - t0
-        logger.info(
-            "turn.finish turn_id={} stop_reason={} elapsed={:.3f}s content_len={}",
-            resolved_turn_id, response.stop_reason, elapsed, len(response.content),
-        )
-
-        self._build_trace(messages, initial_len, response, resolved_turn_id)
-        self._write_turn_record(messages, initial_len, response, resolved_turn_id)
-        return response
+                on_event(event)
+        if self._last_event_response is None:
+            raise RuntimeError("run_events() ended without a response")
+        return self._last_event_response
 
     # ------------------------------------------------------------------
     # 流式接口（供 chat_stream() 使用）
@@ -113,6 +83,9 @@ class TurnEngine:
         self,
         messages: list[Message],
         on_event: Callable[[AgentEvent], None] | None = None,
+        on_user_input_request: Callable[[str, str], Awaitable[str]] | None = None,
+        on_runtime_request: Callable[[RuntimeRequest], Awaitable[str]] | None = None,
+        on_pending_user_input: Callable[[], Awaitable[list[str]]] | None = None,
         turn_id: str | None = None,
     ) -> AsyncIterator[str]:
         """逐 token 流式执行 turn。
@@ -122,6 +95,32 @@ class TurnEngine:
 
         流结束后通过 last_stream_response 属性获取完整 AgentResponse。
         """
+        async for event in self.run_events(
+            messages,
+            on_user_input_request=on_user_input_request,
+            on_runtime_request=on_runtime_request,
+            on_pending_user_input=on_pending_user_input,
+            turn_id=turn_id,
+        ):
+            if on_event:
+                on_event(event)
+            if event.type == EventType.DELTA:
+                content = event.data.get("content", "")
+                if content:
+                    yield content
+        if self._last_event_response is None:
+            raise RuntimeError("run_events() ended without a response")
+        self._last_stream_response = self._last_event_response
+
+    async def run_events(
+        self,
+        messages: list[Message],
+        on_user_input_request: Callable[[str, str], Awaitable[str]] | None = None,
+        on_runtime_request: Callable[[RuntimeRequest], Awaitable[str]] | None = None,
+        on_pending_user_input: Callable[[], Awaitable[list[str]]] | None = None,
+        turn_id: str | None = None,
+    ) -> AsyncIterator[AgentEvent]:
+        """Execute one turn and yield canonical AgentEvents as they happen."""
         resolved_turn_id = turn_id or uuid.uuid4().hex
         set_log_context(turn_id=resolved_turn_id)
 
@@ -130,26 +129,56 @@ class TurnEngine:
         initial_len = len(messages)
         t0 = time.monotonic()
 
-        logger.debug("turn.start(stream) turn_id={} messages={} tools={}", resolved_turn_id, initial_len, len(self._tools))
+        self._last_event_response = None
+
+        logger.debug("turn.start(events) turn_id={} messages={} tools={}", resolved_turn_id, initial_len, len(self._tools))
+
+        seq = 0
+
+        def stamp(event: AgentEvent) -> AgentEvent:
+            nonlocal seq
+            seq += 1
+            return event.with_runtime_context(resolved_turn_id, seq)
+
+        runtime_request_resolver = on_runtime_request
+        if runtime_request_resolver is None and on_user_input_request is not None:
+            async def runtime_request_resolver(request: RuntimeRequest) -> str:
+                return await on_user_input_request(request.prompt, request.request_id)
 
         try:
+            progress_review_requested = False
             for iteration in range(self._max_iterations):
-                # 流式调用 LLM
-                if on_event:
-                    on_event(AgentEvent.thinking())
+                yield stamp(AgentEvent.thinking())
 
                 logger.debug("llm.request.start turn_id={} iteration={}", resolved_turn_id, iteration)
-                text_chunks: list[str] = []
                 async for chunk in self._streaming_executor.stream(
                     messages, tools=self._tools,
                 ):
                     if chunk:
-                        text_chunks.append(chunk)
-                        if on_event:
-                            on_event(AgentEvent.delta(chunk))
+                        yield stamp(AgentEvent.delta(chunk))
 
                 llm_response = self._streaming_executor.last_chat_response
                 tool_calls = llm_response.tool_calls
+
+                if not tool_calls and llm_response.content:
+                    text_calls = self._detect_text_tool_calls(llm_response.content)
+                    if text_calls and self._tools:
+                        available = {t.name for t in self._tools}
+                        detected = []
+                        for name, args in text_calls:
+                            if name in available:
+                                detected.append(ToolCall(
+                                    id=f"text_tc_{uuid.uuid4().hex[:8]}",
+                                    name=name,
+                                    arguments=args,
+                                ))
+                        if detected:
+                            import re
+                            clean = re.sub(r'\{\s*"name"\s*:\s*"[^"]*"\s*,\s*"arguments"\s*:\s*\{[\s\S]*?\}\s*\}', '', llm_response.content).strip()
+                            llm_response.content = clean
+                            tool_calls = detected
+                            logger.info("tool_calls.detected(text) turn_id={} iteration={} tools={}",
+                                        resolved_turn_id, iteration, [tc.name for tc in detected])
 
                 logger.debug(
                     "llm.response.received turn_id={} iteration={} tool_calls={} content_len={}",
@@ -165,10 +194,7 @@ class TurnEngine:
                         "finish_reason": getattr(llm_response.finish_reason, "value", llm_response.finish_reason),
                     }
                     response.stop_reason = StopReason.COMPLETED
-                    if on_event:
-                        on_event(AgentEvent.complete(response.stop_reason))
-                    for chunk in text_chunks:
-                        yield chunk
+                    yield stamp(AgentEvent.complete(response.stop_reason))
                     break
 
                 # 工具调用：构建 trace，执行工具
@@ -187,12 +213,21 @@ class TurnEngine:
                 )
                 messages.append(assistant_message)
 
-                tool_results = await self._execute_tool_calls(
+                tool_event_queue: asyncio.Queue[AgentEvent] = asyncio.Queue()
+                tool_task = asyncio.create_task(self._execute_tool_calls(
                     tool_calls=tool_calls,
-                    on_event=on_event,
+                    on_event=tool_event_queue.put_nowait,
                     turn_id=resolved_turn_id,
                     iteration=iteration,
-                )
+                ))
+                while not tool_task.done():
+                    try:
+                        yield stamp(await asyncio.wait_for(tool_event_queue.get(), timeout=0.01))
+                    except asyncio.TimeoutError:
+                        continue
+                while not tool_event_queue.empty():
+                    yield stamp(tool_event_queue.get_nowait())
+                tool_results = await tool_task
 
                 for tool_call, tr in zip(tool_calls, tool_results, strict=False):
                     messages.append(
@@ -211,33 +246,89 @@ class TurnEngine:
                 if self._has_repeated_tool_call(messages, tool_calls, iteration):
                     response.stop_reason = StopReason.REPEATED_TOOL
                     break
-                if self._should_request_task_review(iteration):
-                    response.stop_reason = StopReason.USER_INPUT_NEEDED
-                    response.content = self._task_review_prompt(iteration + 1)
-                    if on_event:
-                        on_event(AgentEvent.user_input_request(
-                            response.content,
-                            request_id=f"review-task-progress-{resolved_turn_id}",
-                        ))
-                    break
+                if self._should_request_task_review(iteration) and not progress_review_requested:
+                    progress_review_requested = True
+                    question = self._task_review_prompt(iteration + 1)
+                    request_id = f"review-task-progress-{resolved_turn_id}"
+                    request = RuntimeRequest.user_input(
+                        request_id=request_id,
+                        prompt=question,
+                        metadata={
+                            "reason": "task_progress_review",
+                            "iteration": iteration,
+                            "review_after": self._task_progress_review_after,
+                        },
+                    )
+                    yield stamp(AgentEvent.user_input_request(
+                        question,
+                        request_id=request_id,
+                        request=request,
+                    ))
+                    if runtime_request_resolver is None:
+                        response.stop_reason = StopReason.USER_INPUT_NEEDED
+                        response.content = question
+                        break
+                    answer = await runtime_request_resolver(request)
+                    yield stamp(AgentEvent.user_input_received(answer))
+                    messages.append(
+                        self._make_trace_message(
+                            role="user",
+                            content=answer,
+                            turn_id=resolved_turn_id,
+                            iteration=iteration,
+                            message_kind="user_input",
+                        )
+                    )
+                    continue
+                async for event in self._append_pending_user_input(
+                    messages,
+                    on_pending_user_input,
+                    resolved_turn_id,
+                    iteration,
+                ):
+                    yield stamp(event)
             else:
                 response.stop_reason = StopReason.MAX_TURNS
 
+            if response.stop_reason not in (StopReason.COMPLETED, StopReason.ERROR):
+                yield stamp(AgentEvent.complete(response.stop_reason))
+
         except Exception as exc:
-            logger.exception("turn.error(stream) turn_id={}", resolved_turn_id)
+            logger.exception("turn.error(events) turn_id={}", resolved_turn_id)
             response.stop_reason = StopReason.ERROR
-            if on_event:
-                on_event(AgentEvent.error(str(exc)))
+            yield stamp(AgentEvent.error(str(exc)))
 
         elapsed = time.monotonic() - t0
         logger.info(
-            "turn.finish(stream) turn_id={} stop_reason={} elapsed={:.3f}s",
+            "turn.finish(events) turn_id={} stop_reason={} elapsed={:.3f}s",
             resolved_turn_id, response.stop_reason, elapsed,
         )
 
         self._build_trace(messages, initial_len, response, resolved_turn_id)
         self._write_turn_record(messages, initial_len, response, resolved_turn_id)
-        self._last_stream_response = response
+        self._last_event_response = response
+
+    async def _append_pending_user_input(
+        self,
+        messages: list[Message],
+        on_pending_user_input: Callable[[], Awaitable[list[str]]] | None,
+        turn_id: str,
+        iteration: int,
+    ) -> AsyncIterator[AgentEvent]:
+        if on_pending_user_input is None:
+            return
+        pending_inputs = await on_pending_user_input()
+        for input_text in pending_inputs:
+            yield AgentEvent.user_input_received(input_text)
+            messages.append(
+                self._make_trace_message(
+                    role="user",
+                    content=input_text,
+                    turn_id=turn_id,
+                    iteration=iteration,
+                    message_kind="user_input",
+                )
+            )
 
     @property
     def last_stream_response(self) -> AgentResponse:

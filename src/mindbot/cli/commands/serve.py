@@ -25,6 +25,7 @@ def serve(
             from mindbot.bus.events import OutboundMessage
             from mindbot.config.loader import load_config
             from mindbot.config.store import ConfigStore
+            from mindbot.runtime import run_runtime_turn, stream_runtime_turn_text
 
             config = load_config(config_file)
             store = ConfigStore(config, path=config_file)
@@ -53,13 +54,14 @@ def serve(
         )
 
         channel_manager.set_chat_handler(
-            lambda message, session_id: bot.chat(message, session_id=session_id),
+            lambda message, session_id: run_runtime_turn(bot, message, session_id=session_id),
         )
 
         http_channel = channel_manager.get_channel("http")
         if http_channel is not None and hasattr(http_channel, "set_chat_handlers"):
             http_channel.set_chat_handlers(
-                stream_handler=lambda message, session_id: bot.chat_stream(message, session_id=session_id),
+                chat_handler=lambda message, session_id: run_runtime_turn(bot, message, session_id=session_id),
+                stream_handler=lambda message, session_id: stream_runtime_turn_text(bot, message, session_id=session_id),
             )
 
         console.print(f"[bold green]Starting MindBot server on {host}:{port}[/bold green]")

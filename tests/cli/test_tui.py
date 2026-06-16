@@ -1,7 +1,11 @@
+import asyncio
+
 from prompt_toolkit.completion import CompleteEvent
 from prompt_toolkit.document import Document
+import pytest
 
-from mindbot.agent.models import AgentEvent
+from mindbot.agent.models import AgentEvent, RuntimeRequest
+from mindbot.cli.shell import Shell
 from mindbot.cli.shell import _TuiTextState, _handle_tui_event
 from mindbot.cli.shell.tui import (
     TuiApp,
@@ -218,3 +222,69 @@ def test_tui_work_status_stays_below_streaming_text() -> None:
     fragments = list(messages.render())
 
     assert fragments.index(("class:streaming", "hello")) < fragments.index(("class:work-status", "  working..."))
+
+
+@pytest.mark.anyio
+async def test_shell_submit_resolves_pending_user_input_request() -> None:
+    class FakeTui:
+        def __init__(self) -> None:
+            self.user_inputs: list[str] = []
+
+        def exit(self) -> None:
+            pass
+
+        def add_user_input(self, text: str) -> None:
+            self.user_inputs.append(text)
+
+    shell = Shell(bot=None, config_file=None)
+    shell._tui = FakeTui()
+    future: asyncio.Future[str] = asyncio.get_running_loop().create_future()
+    shell._runtime._pending_runtime_answer = future
+    shell._runtime._pending_runtime_request = RuntimeRequest.user_input(
+        request_id="req-1",
+        prompt="Continue?",
+    )
+
+    await shell._on_tui_submit("continue")
+
+    assert future.result() == "continue"
+    assert shell._runtime.pending_user_input_request_id is None
+    assert shell._tui.user_inputs == ["continue"]
+
+
+@pytest.mark.anyio
+async def test_shell_submit_queues_input_during_running_turn() -> None:
+    class FakeTui:
+        def __init__(self) -> None:
+            self.user_inputs: list[str] = []
+
+        def add_user_input(self, text: str) -> None:
+            self.user_inputs.append(text)
+
+    async def wait_forever() -> None:
+        await asyncio.Event().wait()
+
+    shell = Shell(bot=None, config_file=None)
+    shell._tui = FakeTui()
+    shell._runtime._turn_task = asyncio.create_task(wait_forever())
+
+    try:
+        await shell._on_tui_submit("also check humidity")
+
+        assert shell._runtime.drain_queued_user_inputs_now() == ["also check humidity"]
+        assert shell._tui.user_inputs == ["also check humidity"]
+    finally:
+        shell._runtime._turn_task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await shell._runtime._turn_task
+
+
+@pytest.mark.anyio
+async def test_shell_drains_queued_input_for_active_turn() -> None:
+    shell = Shell(bot=None, config_file=None)
+    shell._runtime._queued_user_inputs = ["first", "second"]
+
+    drained = shell._runtime.drain_queued_user_inputs_now()
+
+    assert drained == ["first", "second"]
+    assert shell._runtime.queued_count == 0

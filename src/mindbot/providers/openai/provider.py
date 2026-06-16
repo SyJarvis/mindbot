@@ -5,22 +5,24 @@ from __future__ import annotations
 import copy
 import json
 from collections.abc import AsyncIterator
-from typing import Any, Self
+from typing import Any
+
 import openai
-from mindbot.providers.base import Provider
-from mindbot.providers.openai.param import OpenAIProviderParam
+from typing_extensions import Self
+
 from mindbot.context.models import (
-    ProviderInfo,
     ChatResponse,
     FinishReason,
     ImagePart,
     Message,
+    ProviderInfo,
     TextPart,
     ToolCall,
     UsageInfo,
 )
 from mindbot.logging import logger
-
+from mindbot.providers.base import Provider
+from mindbot.providers.openai.param import OpenAIProviderParam
 
 # Model name prefixes/patterns that support vision input.
 _VISION_PREFIXES = ("gpt-4o", "gpt-4-turbo", "gpt-4-vision", "o1", "o3")

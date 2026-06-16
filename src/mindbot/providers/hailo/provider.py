@@ -2,25 +2,26 @@
 
 from __future__ import annotations
 
+import asyncio
 import copy
 import json
 import re
 from collections.abc import AsyncIterable
-from typing import Any, Self
-import asyncio
+from typing import Any
 
-from mindbot.providers.base import Provider
-from mindbot.providers.hailo.param import HailoProviderParam
+from typing_extensions import Self
+
 from mindbot.context.models import (
-    ProviderInfo,
     ChatResponse,
     FinishReason,
     Message,
+    ProviderInfo,
     ToolCall,
     UsageInfo,
 )
 from mindbot.logging import logger
-
+from mindbot.providers.base import Provider
+from mindbot.providers.hailo.param import HailoProviderParam
 
 MODEL_HEF_MAP: dict[str, str] = {
     "qwen3:1.7b": "sha256_cc9b9d1c92e35249b5a9b7bc31fbd652f03bba1232e99b9a8271845ad6f17821",

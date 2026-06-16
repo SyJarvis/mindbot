@@ -5,7 +5,7 @@
 </div>
 
 <p align="center">
-  <a href="https://github.com/SyJarvis/mindbot"><img src="https://img.shields.io/badge/Version-0.3.7-blue.svg" alt="Version"></a>
+  <a href="https://github.com/SyJarvis/mindbot"><img src="https://img.shields.io/badge/Version-0.4.0-blue.svg" alt="Version"></a>
   <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3.10+-blue?logo=python" alt="Python"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License"></a>
 </p>
@@ -18,6 +18,7 @@
 
 ## 📢 News
 
+- **2026-06-08** 🧭 **v0.4.0** — 轻量事件 runtime、RuntimeSession protocol bus、任务状态与运行中输入处理
 - **2026-05-28** 🖥️ **v0.3.7** — Codex 风格 TUI、消息滚动/复制、会话连续性恢复、默认配置启动
 
 <details>

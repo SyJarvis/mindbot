@@ -22,7 +22,6 @@ def ensure_runtime_home(config: Config) -> None:
         root / "cron",
         root / "data",
         root / "history",
-        root / "history" / "cli_history",
         root / "logs",
         root / "skills",
         root / "tools",

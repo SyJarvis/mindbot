@@ -886,7 +886,7 @@ wheels = [
 
 [[package]]
 name = "mindbot"
-version = "0.3.7"
+version = "0.4.0"
 source = { editable = "." }
 dependencies = [
     { name = "aiohttp" },
@@ -901,6 +901,7 @@ dependencies = [
     { name = "rich" },
     { name = "tiktoken" },
     { name = "typer" },
+    { name = "typing-extensions" },
     { name = "watchfiles" },
 ]
 
@@ -938,6 +939,7 @@ requires-dist = [
     { name = "rich", specifier = ">=13.0" },
     { name = "tiktoken", specifier = ">=0.12.0" },
     { name = "typer", specifier = ">=0.12" },
+    { name = "typing-extensions", specifier = ">=4.0" },
     { name = "watchfiles", specifier = ">=0.20" },
 ]
 provides-extras = ["dev", "feishu"]

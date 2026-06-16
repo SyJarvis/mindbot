@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from mindbot.agent.models import AgentEvent
+    from mindbot.agent.models import AgentEvent, RuntimeRequest
     from mindbot.context.models import MessageContent
     from mindbot.routing.health import HealthMonitor
 
@@ -254,6 +254,9 @@ class MindBot:
         session_id: str = "default",
         tools: list[Any] | None = None,
         on_event: "Callable[[AgentEvent], None] | None" = None,
+        on_user_input_request: "Callable[[str, str], Awaitable[str]] | None" = None,
+        on_runtime_request: "Callable[[RuntimeRequest], Awaitable[str]] | None" = None,
+        on_pending_user_input: "Callable[[], Awaitable[list[str]]] | None" = None,
         images: list[Any] | None = None,
     ) -> Any:
         """Primary async chat entry point.
@@ -279,6 +282,9 @@ class MindBot:
             session_id=session_id,
             tools=tools,
             on_event=on_event,
+            on_user_input_request=on_user_input_request,
+            on_runtime_request=on_runtime_request,
+            on_pending_user_input=on_pending_user_input,
         )
 
     async def chat_stream(
@@ -290,9 +296,9 @@ class MindBot:
     ) -> AsyncIterator[str]:
         """Primary async streaming chat entry point.
 
-        Streams token-by-token when no tools are active.  When tools are
-        active the full turn runs first and the final content is yielded as
-        a single chunk.
+        Streams assistant text deltas from the shared turn event runtime.
+        Tool rounds may occur between model sampling requests; final assistant
+        text is yielded as provider chunks arrive.
 
         Args:
             message: User message

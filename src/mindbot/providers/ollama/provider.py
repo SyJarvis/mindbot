@@ -2,27 +2,29 @@
 
 from __future__ import annotations
 
+import asyncio
 import copy
 import json
-from collections.abc import AsyncIterator
-from typing import Any, Self, Optional
-import asyncio
 import subprocess
+from collections.abc import AsyncIterator
+from typing import Any, Optional
+
+from typing_extensions import Self
 
 from mindbot.config.vision import VISION_PATTERNS
-from mindbot.providers.base import Provider
-from mindbot.providers.ollama.param import OllamaProviderParam
 from mindbot.context.models import (
-    ProviderInfo,
     ChatResponse,
     FinishReason,
     ImagePart,
     Message,
+    ProviderInfo,
     TextPart,
     ToolCall,
     UsageInfo,
 )
 from mindbot.logging import logger
+from mindbot.providers.base import Provider
+from mindbot.providers.ollama.param import OllamaProviderParam
 
 # Well-known Ollama model context windows (fallback when API doesn't report num_ctx)
 # Source: https://ollama.com/library models' default num_ctx

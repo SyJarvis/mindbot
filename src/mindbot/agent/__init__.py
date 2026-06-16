@@ -6,7 +6,6 @@ from mindbot.agent.models import (
     AgentEvent,
     AgentResponse,
     EventType,
-    LoopConfig,
     StopReason,
     TurnResult,
 )
@@ -26,7 +25,6 @@ __all__ = [
     # Scheduler (backward compat)
     "Scheduler",
     # Models
-    "LoopConfig",
     "StopReason",
     "TaskState",
     "TurnResult",
