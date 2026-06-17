@@ -59,12 +59,57 @@ class EventType(str, Enum):
     ABORTED = "aborted"                  # Execution aborted by user
 
 
+class RuntimeRequestType(str, Enum):
+    """Runtime request kinds that may pause or ask the caller for input."""
+
+    USER_INPUT = "user_input"
+    PERMISSION = "permission"
+    TOOL_APPROVAL = "tool_approval"
+
+
 class ApprovalDecision(str, Enum):
     """User decision for tool call approval."""
 
     ALLOW_ONCE = "allow_once"      # Allow this time only
     ALLOW_ALWAYS = "allow_always"  # Always allow (add to whitelist)
     DENY = "deny"                  # Deny execution
+
+
+@dataclass
+class RuntimeRequest:
+    """A canonical request emitted by the runtime and resolved by callers."""
+
+    request_id: str
+    request_type: RuntimeRequestType
+    prompt: str
+    choices: list[str] | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def user_input(
+        cls,
+        *,
+        request_id: str,
+        prompt: str,
+        metadata: dict[str, Any] | None = None,
+    ) -> "RuntimeRequest":
+        return cls(
+            request_id=request_id,
+            request_type=RuntimeRequestType.USER_INPUT,
+            prompt=prompt,
+            metadata=metadata or {},
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        data: dict[str, Any] = {
+            "request_id": self.request_id,
+            "type": self.request_type.value,
+            "prompt": self.prompt,
+            "metadata": self.metadata,
+        }
+        if self.choices is not None:
+            data["choices"] = self.choices
+        return data
 
 
 # ---------------------------------------------------------------------------
@@ -83,6 +128,14 @@ class AgentEvent:
     type: EventType
     timestamp: float
     data: dict[str, Any] = field(default_factory=dict)
+    turn_id: str | None = None
+    seq: int | None = None
+
+    def with_runtime_context(self, turn_id: str, seq: int) -> "AgentEvent":
+        """Attach canonical runtime ordering metadata."""
+        self.turn_id = turn_id
+        self.seq = seq
+        return self
 
     @classmethod
     def thinking(cls, turn: int = 0) -> "AgentEvent":
@@ -172,9 +225,17 @@ class AgentEvent:
         )
 
     @classmethod
-    def user_input_request(cls, question: str, request_id: str) -> "AgentEvent":
+    def user_input_request(
+        cls,
+        question: str,
+        request_id: str,
+        request: RuntimeRequest | None = None,
+    ) -> "AgentEvent":
         """Create a user input request event."""
-        return cls(type=EventType.USER_INPUT_REQUEST, timestamp=time.time(), data={"question": question, "request_id": request_id})
+        data: dict[str, Any] = {"question": question, "request_id": request_id}
+        if request is not None:
+            data["request"] = request.to_dict()
+        return cls(type=EventType.USER_INPUT_REQUEST, timestamp=time.time(), data=data)
 
     @classmethod
     def user_input_received(cls, input_text: str) -> "AgentEvent":
@@ -281,16 +342,3 @@ class AgentResponse:
         """Add an event to the response."""
         self.events.append(event)
 
-
-# ---------------------------------------------------------------------------
-# Config
-# ---------------------------------------------------------------------------
-
-@dataclass
-class LoopConfig:
-    """Runtime configuration for :class:`AgentLoop`."""
-
-    max_turns: int = 10
-    max_steps_per_turn: int = 5
-    loop_detection_window: int = 3  # consecutive identical-tool-call steps
-    enable_auto_continue: bool = True

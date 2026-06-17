@@ -73,9 +73,11 @@ class ToolBackend:
         *,
         auto_load: bool = False,
     ) -> None:
-        self._static_registry: ToolRegistry = static_registry or ToolRegistry()
+        self._static_registry: ToolRegistry = (
+            static_registry if static_registry is not None else ToolRegistry()
+        )
         self._def_registry: ToolDefinitionRegistry = (
-            definition_registry or ToolDefinitionRegistry()
+            definition_registry if definition_registry is not None else ToolDefinitionRegistry()
         )
         self._dynamic_executor = DynamicToolExecutor()
 

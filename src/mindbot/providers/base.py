@@ -4,11 +4,13 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
-from typing import TYPE_CHECKING, Any, Self
+from typing import TYPE_CHECKING, Any
+
+from typing_extensions import Self
 
 if TYPE_CHECKING:
-    from mindbot.context.models import ChatResponse, Message, ProviderInfo
     from mindbot.capability.backends.tooling.models import Tool
+    from mindbot.context.models import ChatResponse, Message, ProviderInfo
 
 
 class Provider(ABC):

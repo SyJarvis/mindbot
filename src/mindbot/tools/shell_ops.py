@@ -44,6 +44,7 @@ def create_shell_tools(
     execution_policy: str = "cwd_guard",
     sandbox_provider: str = "none",
     fail_if_unavailable: bool = False,
+    block_dangerous_commands: bool = False,
     default_timeout: int = 30,
 ) -> list[Tool]:
     """Create shell tools bound to allowed root directories and their subtrees."""
@@ -75,9 +76,10 @@ def create_shell_tools(
             return "Error: command must not be empty"
 
         lowered = command.lower()
-        for pattern in _DANGEROUS_PATTERNS:
-            if re.search(pattern, lowered):
-                return "Error: command blocked by safety policy"
+        if block_dangerous_commands:
+            for pattern in _DANGEROUS_PATTERNS:
+                if re.search(pattern, lowered):
+                    return "Error: command blocked by safety policy"
 
         cwd = root
         if working_dir:

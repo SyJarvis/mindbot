@@ -2,6 +2,7 @@
 
 # Core manager
 from mindbot.memory.manager import MemoryManager, MemoryManagerConfig
+from mindbot.memory.curator import MemoryCandidate, MemoryCurator
 
 # Storage layer
 from mindbot.memory.storage import (
@@ -46,6 +47,8 @@ __all__ = [
     # Manager
     "MemoryManager",
     "MemoryManagerConfig",
+    "MemoryCandidate",
+    "MemoryCurator",
     # Storage
     "JSONIndexStore",
     "IndexStoreConfig",

@@ -21,6 +21,7 @@ def create_builtin_tools(
     shell_execution_mode: str = "cwd_guard",
     shell_sandbox_provider: str = "none",
     shell_fail_if_unavailable: bool = False,
+    shell_block_dangerous_commands: bool = False,
 ) -> list[Tool]:
     """Create the default built-in tool set."""
     root, allowed_roots = resolve_allowed_roots(
@@ -44,6 +45,7 @@ def create_builtin_tools(
             execution_policy=shell_execution_mode,
             sandbox_provider=shell_sandbox_provider,
             fail_if_unavailable=shell_fail_if_unavailable,
+            block_dangerous_commands=shell_block_dangerous_commands,
         )
     )
     tools.extend(

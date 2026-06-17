@@ -109,6 +109,9 @@ class _TuiMessages:
     def append_interrupted(self) -> None:
         self.append("  interrupted", "class:interrupted")
 
+    def append_review_prompt(self, question: str) -> None:
+        self.append(f"  ⏸ {question}", "class:review-prompt")
+
     def render(self) -> FormattedText:
         return FormattedText(self._render_fragments(self._lines))
 
@@ -352,6 +355,10 @@ class TuiApp:
         self._messages.append_interrupted()
         self._invalidate()
 
+    def add_review_prompt(self, question: str) -> None:
+        self._messages.append_review_prompt(question)
+        self._invalidate()
+
     def add_turn_summary(self, elapsed_sec: float, tokens_used: int, context_pct: float) -> None:
         self._messages.clear_work_status()
         parts = ["worked", f"{elapsed_sec:.1f}s"]
@@ -502,6 +509,7 @@ class TuiApp:
             "tool-ok": "fg:#56d364",
             "error": "bold #ff7b72",
             "interrupted": "fg:#f2cc60",
+            "review-prompt": "fg:#f2cc60 italic",
             "dim": "fg:#7c8594",
             "toolbar.model": "#56d4e6 bold",
             "toolbar.cwd": "fg:#7c8594",

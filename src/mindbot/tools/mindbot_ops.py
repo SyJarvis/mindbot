@@ -171,6 +171,7 @@ def create_mindbot_tools(
                         "policy": config.agent.shell_execution.policy.value,
                         "sandbox_provider": config.agent.shell_execution.sandbox_provider.value,
                         "fail_if_unavailable": config.agent.shell_execution.fail_if_unavailable,
+                        "block_dangerous_commands": config.agent.shell_execution.block_dangerous_commands,
                     },
                     "provider_instances": [
                         {"name": name, "type": provider.type}
@@ -223,7 +224,7 @@ def create_mindbot_tools(
                 "allowed_paths": [str(path) for path in allowed_roots],
                 "allowed_path_policy": "Each allowed path grants access to that directory tree.",
                 "shell_execution_boundary": (
-                    "cwd_guard validates the launch directory and dangerous command patterns, "
+                    "cwd_guard validates the launch directory and can optionally block dangerous command patterns, "
                     "but does not provide OS-level shell sandboxing."
                 ),
                 "cpu_count": os.cpu_count(),
@@ -249,4 +250,3 @@ def create_mindbot_tools(
             handler=get_mindbot_runtime_info,
         )
     ]
-

@@ -10,13 +10,14 @@ Persistence strategies:
 * **conversation** – always writes the user message and final assistant
   message to the conversation block.  Intermediate tool messages are
   written according to *tool_persistence* (``none`` | ``summary`` | ``full``).
-* **memory** – appends the user/assistant pair to short-term memory.
+* **memory** – stores only curated long-lived facts, preferences, and decisions.
 * **journal** – appends a timestamped record of the turn (including the
   full message trace) to the append-only session journal.
 """
 
 from __future__ import annotations
 
+import json
 from dataclasses import asdict, is_dataclass
 from typing import TYPE_CHECKING, Literal
 
@@ -29,6 +30,7 @@ ToolPersistence = Literal["none", "summary", "full"]
 
 if TYPE_CHECKING:
     from mindbot.agent.models import AgentResponse
+    from mindbot.memory.curator import MemoryCurator
     from mindbot.memory.manager import MemoryManager
     from mindbot.session.store import SessionJournal
     from mindbot.session.types import SessionMessage
@@ -53,12 +55,14 @@ class PersistenceWriter:
         context: ContextManager,
         *,
         memory: "MemoryManager | None" = None,
+        memory_curator: "MemoryCurator | None" = None,
         journal: "SessionJournal | None" = None,
         tool_persistence: ToolPersistence = "none",
         system_prompt: str = "",
     ) -> None:
         self._ctx = context
         self._memory = memory
+        self._memory_curator = memory_curator
         self._journal = journal
         self._tool_persistence = tool_persistence
         self._system_prompt = system_prompt
@@ -79,14 +83,14 @@ class PersistenceWriter:
         """Commit one complete turn to all persistence targets.
 
         1. Conversation context – user + (optional tool trace) + assistant.
-        2. Short-term memory – user/assistant summary.
+        2. Memory – curated long-lived facts/preferences/decisions.
         3. Session journal – full timestamped trace.
         """
         assistant_text = response.content or ""
         trace = response.message_trace or []
 
         self._commit_conversation(user_text, assistant_text, trace)
-        self._commit_memory(user_text, assistant_text)
+        self._commit_memory(user_text, assistant_text, trace)
         self._commit_journal(
             user_text,
             assistant_text,
@@ -112,6 +116,26 @@ class PersistenceWriter:
             session_id,
             user_timestamp=user_timestamp,
         )
+
+    def commit_task_state(self, session_id: str, task_state: object) -> None:
+        """Persist the latest task-state snapshot as journal metadata."""
+        if self._journal is None:
+            return
+
+        from mindbot.session.types import SessionMessage
+
+        if hasattr(task_state, "to_dict"):
+            payload = task_state.to_dict()
+        else:
+            payload = {}
+        self._journal.append(session_id, [
+            SessionMessage(
+                role="system",
+                content=json.dumps(payload, ensure_ascii=False),
+                message_kind="task_state",
+                is_meta=True,
+            )
+        ])
 
     # ------------------------------------------------------------------
     # Conversation context
@@ -164,15 +188,40 @@ class PersistenceWriter:
     # Short-term memory
     # ------------------------------------------------------------------
 
-    def _commit_memory(self, user_text: str, assistant_text: str) -> None:
-        """Append user/assistant pair to short-term memory."""
-        if self._memory is None:
+    def _commit_memory(
+        self,
+        user_text: str,
+        assistant_text: str,
+        trace: list[Message],
+    ) -> None:
+        """Store curated long-lived memory candidates."""
+        if self._memory is None or self._memory_curator is None:
             return
         try:
-            self._memory.append_to_short_term(f"User: {user_text}")
-            self._memory.append_to_short_term(f"Assistant: {assistant_text}")
+            candidates = self._memory_curator.curate_turn(
+                user_text=user_text,
+                assistant_text=assistant_text,
+                trace=trace,
+            )
+            for candidate in candidates:
+                self._write_memory_candidate(candidate)
         except Exception:
             logger.debug("Failed to persist turn to memory")
+
+    def _write_memory_candidate(self, candidate: object) -> None:
+        kind = getattr(candidate, "kind", "fact")
+        content = getattr(candidate, "content", "")
+        metadata = getattr(candidate, "metadata", None)
+        if not content:
+            return
+
+        if kind == "preference" and hasattr(self._memory, "append_preference"):
+            self._memory.append_preference(content, metadata=metadata)
+            return
+        if kind in {"decision", "project_note", "fact"} and hasattr(self._memory, "promote_to_long_term"):
+            self._memory.promote_to_long_term(content, metadata=metadata)
+            return
+        self._memory.append_to_short_term(content, metadata=metadata)
 
     # ------------------------------------------------------------------
     # Session journal

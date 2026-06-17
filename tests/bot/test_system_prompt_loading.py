@@ -2,8 +2,8 @@
 
 Covers:
 - system prompt loaded from SYSTEM.md into config.agent.system_prompt
-- missing SYSTEM.md causes sys.exit
-- empty SYSTEM.md results in empty string (warning, no crash)
+- missing SYSTEM.md uses built-in default
+- empty SYSTEM.md results in empty string
 - prompt reaches Scheduler assembly (system role message present)
 """
 
@@ -11,10 +11,6 @@ from __future__ import annotations
 
 from pathlib import Path
 from unittest.mock import patch
-
-import pytest
-
-from mindbot.config.schema import Config
 
 
 def _setup_workspace(root: Path, system_md: str | None = None, settings: str | None = None) -> None:
@@ -56,20 +52,26 @@ def test_system_prompt_injected(tmp_path, monkeypatch):
     assert bot.config.agent.system_prompt == "You are helpful."
 
 
-def test_system_prompt_missing_exits(tmp_path, monkeypatch):
-    """Missing SYSTEM.md causes sys.exit(1)."""
+def test_system_prompt_missing_ok(tmp_path, monkeypatch):
+    """Missing SYSTEM.md uses the built-in default prompt."""
     fake_home = tmp_path / "home"
     fake_home.mkdir()
     monkeypatch.setattr(Path, "home", staticmethod(lambda: fake_home))
 
-    root = fake_home / ".mindbot"
-    root.mkdir(parents=True)
-    (root / "settings.json").write_text('{"agent": {"model": "openai/test"}}', encoding="utf-8")
+    _setup_workspace(fake_home / ".mindbot")
 
-    from mindbot.bot import MindBot
+    fake_llm = type("FakeLLM", (), {
+        "chat": None, "chat_stream": None, "bind_tools": lambda s, t: s,
+        "get_info": lambda s: None, "get_model_list": lambda s: [],
+    })()
 
-    with pytest.raises(SystemExit):
-        MindBot()
+    with patch("mindbot.providers.factory.ProviderFactory.create", return_value=fake_llm):
+        from mindbot.bot import MindBot
+        bot = MindBot()
+
+    assert "MindBot" in bot.config.agent.system_prompt
+    system_file = fake_home / ".mindbot" / "SYSTEM.md"
+    assert not system_file.exists()
 
 
 def test_system_prompt_empty_file_ok(tmp_path, monkeypatch):

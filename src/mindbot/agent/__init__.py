@@ -6,10 +6,10 @@ from mindbot.agent.models import (
     AgentEvent,
     AgentResponse,
     EventType,
-    LoopConfig,
     StopReason,
     TurnResult,
 )
+from mindbot.agent.task_state import TaskState
 from mindbot.agent.multi_agent import MultiAgentOrchestrator
 from mindbot.agent.core import MindAgent
 from mindbot.agent.input_builder import InputBuilder
@@ -25,8 +25,8 @@ __all__ = [
     # Scheduler (backward compat)
     "Scheduler",
     # Models
-    "LoopConfig",
     "StopReason",
+    "TaskState",
     "TurnResult",
     "AgentEvent",
     "AgentResponse",

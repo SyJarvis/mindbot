@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from mindbot.agent.models import AgentEvent
+    from mindbot.agent.models import AgentEvent, RuntimeRequest
+    from mindbot.context.models import MessageContent
     from mindbot.routing.health import HealthMonitor
 
 from mindbot.config.schema import Config
@@ -16,6 +17,7 @@ from mindbot.config.store import ConfigStore
 from mindbot.agent.core import MindAgent
 from mindbot.cron.service import CronService
 from mindbot.logging import logger, setup_logging
+from mindbot.runtime import ensure_runtime_home
 
 
 class MindBot:
@@ -53,6 +55,7 @@ class MindBot:
             self.config = self._load_default_config()
             self._store = None
 
+        ensure_runtime_home(self.config)
         setup_logging(self.config.logging)
 
         self._inject_system_prompt()
@@ -247,10 +250,14 @@ class MindBot:
 
     async def chat(
         self,
-        message: str,
+        message: "str | MessageContent | Any",
         session_id: str = "default",
         tools: list[Any] | None = None,
         on_event: "Callable[[AgentEvent], None] | None" = None,
+        on_user_input_request: "Callable[[str, str], Awaitable[str]] | None" = None,
+        on_runtime_request: "Callable[[RuntimeRequest], Awaitable[str]] | None" = None,
+        on_pending_user_input: "Callable[[], Awaitable[list[str]]] | None" = None,
+        images: list[Any] | None = None,
     ) -> Any:
         """Primary async chat entry point.
 
@@ -269,24 +276,29 @@ class MindBot:
             plain-text reply.
         """
         agent = self._require_agent()
+        message = self._prepare_message_content(message, images=images)
         return await agent.chat(
             message,
             session_id=session_id,
             tools=tools,
             on_event=on_event,
+            on_user_input_request=on_user_input_request,
+            on_runtime_request=on_runtime_request,
+            on_pending_user_input=on_pending_user_input,
         )
 
     async def chat_stream(
         self,
-        message: str,
+        message: "str | MessageContent | Any",
         session_id: str = "default",
         tools: list[Any] | None = None,
+        images: list[Any] | None = None,
     ) -> AsyncIterator[str]:
         """Primary async streaming chat entry point.
 
-        Streams token-by-token when no tools are active.  When tools are
-        active the full turn runs first and the final content is yielded as
-        a single chunk.
+        Streams assistant text deltas from the shared turn event runtime.
+        Tool rounds may occur between model sampling requests; final assistant
+        text is yielded as provider chunks arrive.
 
         Args:
             message: User message
@@ -297,8 +309,34 @@ class MindBot:
             String chunks of the assistant response
         """
         agent = self._require_agent()
+        message = self._prepare_message_content(message, images=images)
         async for chunk in agent.chat_stream(message, session_id=session_id, tools=tools):
             yield chunk
+
+    def _prepare_message_content(
+        self,
+        message: Any,
+        *,
+        images: list[Any] | None = None,
+    ) -> Any:
+        """Normalize optional user-facing image input into MessageContent."""
+        from mindbot.multimodal.models import ContentInput
+        from mindbot.multimodal.processor import MediaProcessor
+
+        processor = MediaProcessor(
+            max_images=self.config.multimodal.max_images,
+            max_file_size_mb=self.config.multimodal.max_file_size_mb,
+        )
+
+        if isinstance(message, ContentInput):
+            image_parts = processor.process_content_items(message.images)
+            return processor.build_message_content(message.text, image_parts)
+
+        if images:
+            image_parts = processor.process_images(images)
+            return processor.build_message_content(str(message), image_parts)
+
+        return message
 
     # ------------------------------------------------------------------
     # Deprecated compatibility shims – kept for one release cycle

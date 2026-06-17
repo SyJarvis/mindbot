@@ -155,20 +155,23 @@ async def demo_search() -> None:
 
         # 关键词检索
         print("\n[2] 关键词检索: 'Python'")
-        results = manager.search("Python", top_k=3)
-        for i, shard in enumerate(results):
+        results = await manager.recall("Python", top_k=3)
+        for i, hit in enumerate(results):
+            shard = hit.shard
             print(f"  [{i+1}] {shard.text[:50]}... (access_count={shard.access_count})")
 
         # 语义检索
         print("\n[3] 语义检索: '编程语言推荐'")
-        results = manager.search("编程语言推荐", top_k=3)
-        for i, shard in enumerate(results):
+        results = await manager.recall("编程语言推荐", top_k=3)
+        for i, hit in enumerate(results):
+            shard = hit.shard
             print(f"  [{i+1}] {shard.text[:50]}...")
 
         # 检索特定类型
         print("\n[4] 检索偏好类型")
-        results = manager.search("偏好", top_k=2)
-        for shard in results:
+        results = await manager.recall("偏好", top_k=2)
+        for hit in results:
+            shard = hit.shard
             print(f"  PREFERENCE: {shard.text[:50]}...")
 
         manager.close()
@@ -288,9 +291,9 @@ async def demo_export_import() -> None:
         print(f"  导入后 shards: {target_stats['shards']}")
 
         print("\n[4] 验证导入结果")
-        results = target_manager.search("Python")
+        results = await target_manager.recall("Python")
         if results:
-            print(f"  检索到导入记忆: {results[0].text[:40]}...")
+            print(f"  检索到导入记忆: {results[0].shard.text[:40]}...")
 
         target_manager.close()
 
@@ -348,9 +351,9 @@ async def demo_legacy_migration() -> None:
         print(f"  失败: {report.get('failed', 0)}")
 
         print("\n[3] 验证迁移结果")
-        results = manager.search("Python")
+        results = await manager.recall("Python")
         if results:
-            print(f"  检索到迁移记忆: {results[0].text[:40]}...")
+            print(f"  检索到迁移记忆: {results[0].shard.text[:40]}...")
 
         manager.close()
 

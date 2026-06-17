@@ -55,6 +55,15 @@ class TestMemoryManager:
         assert len(shards) == 1
         assert shards[0].shard_type == ShardType.FACT
 
+    def test_set_permanent_updates_stored_shard(self, temp_manager: MemoryManager) -> None:
+        shards = temp_manager.promote_to_long_term("Permanent SDK fact")
+
+        assert temp_manager.set_permanent(shards[0].id) is True
+
+        loaded = temp_manager.get_shard(shards[0].id)
+        assert loaded is not None
+        assert loaded.is_permanent is True
+
     def test_append_preference(self, temp_manager: MemoryManager) -> None:
         """Test appending preference."""
         shard = temp_manager.append_preference("User likes dark mode")

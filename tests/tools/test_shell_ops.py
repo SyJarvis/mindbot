@@ -17,11 +17,13 @@ def _tool_map(
     *,
     allowed_paths: list[Path | str] | None = None,
     execution_policy: str = "cwd_guard",
+    block_dangerous_commands: bool = False,
 ) -> dict[str, object]:
     tools = create_shell_tools(
         workspace,
         allowed_paths=allowed_paths,
         execution_policy=execution_policy,
+        block_dangerous_commands=block_dangerous_commands,
     )
     return {tool.name: tool for tool in tools}
 
@@ -86,3 +88,25 @@ async def test_exec_command_reports_unimplemented_sandbox_policy(tmp_path: Path)
     result = await tools["exec_command"].handler("pwd")  # type: ignore[union-attr]
 
     assert "does not yet provide an OS-level shell sandbox" in result
+
+
+@pytest.mark.anyio
+async def test_exec_command_does_not_block_dangerous_pattern_by_default(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    tools = _tool_map(workspace)
+
+    result = await tools["exec_command"].handler("printf 'rm -rf /'")  # type: ignore[union-attr]
+
+    assert "rm -rf /" in result
+
+
+@pytest.mark.anyio
+async def test_exec_command_can_block_dangerous_pattern(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    tools = _tool_map(workspace, block_dangerous_commands=True)
+
+    result = await tools["exec_command"].handler("printf 'rm -rf /'")  # type: ignore[union-attr]
+
+    assert "blocked by safety policy" in result

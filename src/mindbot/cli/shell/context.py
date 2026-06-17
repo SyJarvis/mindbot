@@ -219,6 +219,7 @@ def build_shell_turn_tools(bot: Any, shell_ctx: ShellSessionContext) -> list[Any
         execution_policy=bot.config.agent.shell_execution.policy.value,
         sandbox_provider=bot.config.agent.shell_execution.sandbox_provider.value,
         fail_if_unavailable=bot.config.agent.shell_execution.fail_if_unavailable,
+        block_dangerous_commands=bot.config.agent.shell_execution.block_dangerous_commands,
     )
     mindbot_tools = create_mindbot_tools(
         shell_ctx.workspace,
